@@ -2,6 +2,7 @@
 //
 // Run:
 //   quint test lifecycle_test.qnt --main=lifecycle_tests
+//   quint test lifecycle_test.qnt --main=policy_tests
 //   quint test lifecycle_test.qnt --main=client_tests
 //
 // Names must end in "Test" or quint test silently skips them.
@@ -16,6 +17,7 @@ module lifecycle_tests {
     HANDLE_LIFETIME = 10,
     RETENTION_SECONDS = 50,
     ON_MISSING = "new",
+    EXTENSION_ADVERTISED = true,
     MAX_TIME = 30,
     MAX_STATE = 5,
   ).* from "./lifecycle"
@@ -31,6 +33,7 @@ module lifecycle_tests {
   }
 
   // §4.4 exchange: expired authentic handle returns ExchangeOnly (no serve).
+  // presentation-resolver checks expiry before fork — expired+fork cannot establish child.
   run exchangeDoesNotServeTest = {
     init
       .then(establish)
@@ -68,7 +71,67 @@ module lifecycle_tests {
 }
 
 // =============================================================================
-// Client seq merge (§4.2)
+// onMissingHandle / inactive presentation policies (§4.1, §8)
+// =============================================================================
+
+module policy_tests {
+  import lifecycle(
+    HANDLE_LIFETIME = 10,
+    RETENTION_SECONDS = 50,
+    ON_MISSING = "none",
+    EXTENSION_ADVERTISED = true,
+    MAX_TIME = 30,
+    MAX_STATE = 5,
+  ).* from "./lifecycle"
+
+  // §4.1 onMissingHandle=none: no establishment when handle absent.
+  run establishNoneTest = {
+    init
+      .then(serveUnbound)
+      .expect(conversations.keys().size() == 0)
+      .expect(not(outcomeMinted(lastOutcome)))
+  }
+}
+
+module policy_reject_tests {
+  import lifecycle(
+    HANDLE_LIFETIME = 10,
+    RETENTION_SECONDS = 50,
+    ON_MISSING = "reject",
+    EXTENSION_ADVERTISED = true,
+    MAX_TIME = 30,
+    MAX_STATE = 5,
+  ).* from "./lifecycle"
+
+  // §8 resolveOnMissingHandle=reject: missing handle → Rejected.
+  run rejectMissingTest = {
+    init
+      .then(rejectMissingHandle)
+      .expect(outcomeIsRejected(lastOutcome))
+  }
+}
+
+module policy_inactive_tests {
+  import lifecycle(
+    HANDLE_LIFETIME = 10,
+    RETENTION_SECONDS = 50,
+    ON_MISSING = "new",
+    EXTENSION_ADVERTISED = false,
+    MAX_TIME = 30,
+    MAX_STATE = 5,
+  ).* from "./lifecycle"
+
+  // Client did not advertise extension → inactive presentation, unbound serve.
+  run inactiveServeTest = {
+    init
+      .then(inactiveServe)
+      .expect(conversations.keys().size() == 0)
+      .expect(not(outcomeMinted(lastOutcome)))
+  }
+}
+
+// =============================================================================
+// Client seq merge (§4.2) — conversationId-scoped
 // =============================================================================
 
 module client_tests {
@@ -80,5 +143,13 @@ module client_tests {
       .then(acceptResponse)
       .expect(witnessedAccept)
       .expect(clientMonotonic)
+  }
+
+  // Session key pinned to first conversationId — fork must use a child session key.
+  run rejectCrossConversationTest = {
+    init
+      .then(acceptResponse)
+      .then(rejectCrossConversation)
+      .expect(not(witnessedAccept))
   }
 }

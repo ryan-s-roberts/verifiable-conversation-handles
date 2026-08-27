@@ -54,6 +54,10 @@ Expired-handle exchange mints fresh `_meta` only; the presenting tool handler is
 
 ## Client concurrency (§4.2)
 
-Parallel in-flight tool calls may send the same handle. The client merges responses by advisory `seq`: only handles with `seq >= highestSeq` replace the stored handle. Read-only server responses do not rotate the handle unless state changes or expiry policy applies.
+Parallel in-flight tool calls may send the same handle. Within an issuer-scoped client, sequence state
+is keyed by `conversationId`: only a higher-sequence handle for the same conversation replaces the
+stored handle. Accept a fork response under a new session key so the child does not replace its
+parent. Read-only server responses do not rotate the handle unless state changes or expiry policy
+applies.
 
 Only the **Specification** section of [conversation-identity-sep-draft.md](./conversation-identity-sep-draft.md) is tested. This is an opt-in extension on MCP 2026-07-28; non-participating peers are unaffected.

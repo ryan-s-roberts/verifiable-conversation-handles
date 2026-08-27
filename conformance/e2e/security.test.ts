@@ -1,26 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mintHandle } from '../../src/codec.js';
 import { flipHandleByte, setClientHandle } from '../../src/test-helpers.js';
-import {
-  EXTENSION_ID,
-  CID_BYTE_LENGTH,
-  ERROR_CODE_HANDLE_NOT_RECOGNIZED,
-  MISSING_REQUIRED_CLIENT_CAPABILITY,
-} from '../../src/schema/draft/schema.js';
-import { CLIENT_CAPABILITIES_META_KEY } from '../../src/meta-keys.js';
-import { parseCallToolHandleError } from '../../src/errors.js';
-import {
-  acceptMetaOutOfOrder,
-  callMemoryAppend,
-  callMemoryRead,
-  handleMetaFromResult,
-  metaFromResult,
-  startTestHarness,
-  TEST_KEYS,
-  textFromResult,
-  withClient,
-} from '../harness.js';
-import { OTHER_SERVER_KEYS } from './shared.js';
+import { EXTENSION_ID, CID_BYTE_LENGTH } from '../../src/schema/draft/schema.js';
+import { TEST_KEYS, callMemoryAppend, callMemoryRead, textFromResult, withClient, withHarness } from '../harness.js';
 
 /**
  * SEP-0000 e2e: security and binding (§2.1, §5.1, §6).
@@ -29,26 +11,21 @@ import { OTHER_SERVER_KEYS } from './shared.js';
  * argument/meta binding rules, and advisory mirror rejection.
  */
 describe('conversation-handle e2e security', () => {
-
   /** §5.1: client stores the handle JSON string verbatim from response meta. */
   it('sep-0000-handle-is-json-string + sep-0000-client-returns-handle-verbatim: client stores handle verbatim only', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const { handleMeta } = await callMemoryAppend(client, handleClient, 'opaque');
         const stored = handleClient.getHandle();
         expect(typeof stored).toBe('string');
         expect(stored).toBe((handleMeta as { handle: string }).handle);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §6: single-byte tamper fails integrity verification with actionable error. */
   it('sep-0000-reject-forged-handle: tampered handle fails integrity verification', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const { handleMeta } = await callMemoryAppend(client, handleClient, 'opaque');
         const mutated = flipHandleByte(handleClient.getHandle()!);
@@ -58,15 +35,12 @@ describe('conversation-handle e2e security', () => {
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toContain('integrity');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §2.1: conversation state is bound to the authenticated principal, not the handle alone. */
   it('sep-0000-no-cross-principal-conversation-state: bob cannot read alice memory', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       let stolen = '';
       let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
@@ -80,9 +54,7 @@ describe('conversation-handle e2e security', () => {
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/principal|not own/i);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /**
@@ -90,8 +62,7 @@ describe('conversation-handle e2e security', () => {
    * callers cannot access conversation state even with a stolen handle.
    */
   it('sep-0000-handle-not-authorization + sep-0000-state-commitment-not-authorization: valid handle without bearer yields no state', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       let stolen = '';
       let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
@@ -104,15 +75,12 @@ describe('conversation-handle e2e security', () => {
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §5.1: handle in tool arguments is ignored — only `_meta` binding resolves conversation. */
   it('sep-0000-reject-handle-in-tool-arguments: handle in tool args does not bind conversation', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'bound');
         handleClient.clear();
@@ -132,30 +100,24 @@ describe('conversation-handle e2e security', () => {
         handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta);
         expect(textFromResult(result)).toBe('[]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §4.1: omitting handle starts a fresh conversation — prior memory is not visible. */
   it('sep-0000-invalid-handle-not-resolved + sep-0000-treated-as-no-conversation: omitting handle does not see prior memory', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'prior');
         handleClient.clear();
         const read = await callMemoryRead(client, handleClient);
         expect(textFromResult(read.result)).toBe('[]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §5.1: advisory `conversationId`/`seq` mirrors without `handle` do not resolve conversation. */
   it('sep-0000-mirrors-not-accepted-as-input: advisory mirrors without handle do not resolve conversation', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const { handleMeta } = await callMemoryAppend(client, handleClient, 'secret');
         const mirrors = handleMeta as { conversationId: string; seq: number };
@@ -174,8 +136,6 @@ describe('conversation-handle e2e security', () => {
         handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta);
         expect(textFromResult(result)).toBe('[]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 });

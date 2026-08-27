@@ -1,25 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { mintHandle } from '../../src/codec.js';
-import {
-  EXTENSION_ID,
-  CID_BYTE_LENGTH,
-  ERROR_CODE_HANDLE_NOT_RECOGNIZED,
-  MISSING_REQUIRED_CLIENT_CAPABILITY,
-} from '../../src/schema/draft/schema.js';
-import { CLIENT_CAPABILITIES_META_KEY } from '../../src/meta-keys.js';
-import { parseCallToolHandleError } from '../../src/errors.js';
+import { EXTENSION_ID } from '../../src/schema/draft/schema.js';
 import {
   acceptMetaOutOfOrder,
   callMemoryAppend,
   callMemoryRead,
   handleMetaFromResult,
-  metaFromResult,
-  startTestHarness,
-  TEST_KEYS,
   textFromResult,
   withClient,
+  withHarness,
 } from '../harness.js';
-import { OTHER_SERVER_KEYS } from './shared.js';
 
 /**
  * SEP-0000 e2e: client concurrency (§5.2).
@@ -28,14 +17,12 @@ import { OTHER_SERVER_KEYS } from './shared.js';
  * through the HTTP harness with `ConversationHandleClient`.
  */
 describe('conversation-handle e2e client concurrency', () => {
-
   /**
    * §5.2: after out-of-order accepts, the client sends the highest-seq handle on the next
    * request and the server honours the current conversation state.
    */
   it('sep-0000-client-sends-highest-seq: out-of-order accept keeps highest seq for next request', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'seed');
         const second = await callMemoryAppend(client, handleClient, 'two');
@@ -52,15 +39,12 @@ describe('conversation-handle e2e client concurrency', () => {
         expect(read.result).not.toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toBe('["seed","two","four"]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §5.2: accepting a lower seq after a higher one must not regress stored handle or seq. */
   it('sep-0000-client-discards-lower-seq: lower seq accept does not regress stored handle', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (_client, handleClient) => {
         acceptMetaOutOfOrder(handleClient, [
           {
@@ -85,9 +69,7 @@ describe('conversation-handle e2e client concurrency', () => {
         expect(handleClient.getHandle()).toBe('high-handle');
         expect(handleClient.getSession().highestSeq).toBe(5);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /**
@@ -95,8 +77,7 @@ describe('conversation-handle e2e client concurrency', () => {
    * `max(seq)` across responses.
    */
   it('sep-0000-client-concurrency-parallel: parallel appends complete and client tracks highest seq', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'seed');
         const meta = handleClient.buildRequestMeta();
@@ -124,9 +105,7 @@ describe('conversation-handle e2e client concurrency', () => {
         expect(memory).toContain('b');
         expect(memory).toContain('c');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /**
@@ -134,8 +113,7 @@ describe('conversation-handle e2e client concurrency', () => {
    * response arrives the client converges on the highest seq.
    */
   it('sep-0000-client-concurrency-interleaved: stale in-flight handle converges after newer seq accepted', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const first = await callMemoryAppend(client, handleClient, 'seed');
         const staleHandle = (first.handleMeta as { handle: string }).handle;
@@ -163,8 +141,6 @@ describe('conversation-handle e2e client concurrency', () => {
         expect(memory).toContain('from-stale');
         expect(memory).toContain('fresh');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 });

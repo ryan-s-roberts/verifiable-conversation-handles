@@ -1,20 +1,20 @@
 /**
  * Unit tests for `ConversationHandleClient` (SEP draft §5 client behaviour).
  *
- * Exercises seq ordering, handle storage, capability advertisement, and `maxHandleBytes`
- * enforcement without the HTTP harness. E2e counterparts live in `conformance/e2e/client-concurrency.test.ts`.
- * Check ids in test names map to `conformance/sep-0000.yaml`.
+ * Exercises conversationId-scoped seq ordering, handle storage, capability advertisement, and
+ * `maxHandleBytes` enforcement without the HTTP harness. E2e counterparts live in
+ * `conformance/e2e/client-concurrency.test.ts`. Check ids in test names map to `conformance/sep-0000.yaml`.
  */
 import { describe, expect, it } from 'vitest';
 import { ConversationHandleClient } from './client.js';
 import { EXTENSION_ID } from './schema/draft/schema.js';
 import { CLIENT_CAPABILITIES_META_KEY } from './meta-keys.js';
 
-function handleMeta(seq: number, handle = `handle-seq-${seq}`) {
+function handleMeta(seq: number, handle = `handle-seq-${seq}`, conversationId = 'abc123') {
   return {
     [EXTENSION_ID]: {
       handle,
-      conversationId: 'abc123',
+      conversationId,
       seq,
       expiresAt: 4_000_000_000,
       supersededHandlePresented: false,
@@ -23,7 +23,7 @@ function handleMeta(seq: number, handle = `handle-seq-${seq}`) {
 }
 
 describe('ConversationHandleClient concurrency', () => {
-  /** §5.2: client tracks the highest seq seen across responses. */
+  /** §5.2: client tracks the highest seq seen for a conversation across responses. */
   it('sep-0000-client-sends-highest-seq: accepts monotonic seq updates', () => {
     const client = new ConversationHandleClient();
     client.acceptResponseMeta(handleMeta(2, 'h2'));
@@ -50,7 +50,7 @@ describe('ConversationHandleClient concurrency', () => {
     expect((meta[EXTENSION_ID] as { handle: string }).handle).toBe('h4');
   });
 
-  /** Starting a new conversation clears seq tracking. */
+  /** Clearing a session key drops its binding without affecting other keys for the same conversation. */
   it('clear resets seq tracking', () => {
     const client = new ConversationHandleClient();
     client.acceptResponseMeta(handleMeta(3, 'h3'));
@@ -59,13 +59,58 @@ describe('ConversationHandleClient concurrency', () => {
     expect(client.getSession().highestSeq).toBe(0);
   });
 
-  /** Equal seq replaces the handle string (e.g. near-expiry rotation at same seq is not modelled here). */
-  it('sep-0000-client-discards-lower-seq: equal seq overwrites handle string', () => {
+  /** Equal seq with a different handle string is rejected for the same conversation. */
+  it('rejects a different handle carrying the same conversation sequence', () => {
     const client = new ConversationHandleClient();
     client.acceptResponseMeta(handleMeta(5, 'first-at-five'));
     client.acceptResponseMeta(handleMeta(5, 'second-at-five'));
-    expect(client.getHandle()).toBe('second-at-five');
+    expect(client.getHandle()).toBe('first-at-five');
     expect(client.getSession().highestSeq).toBe(5);
+  });
+
+  /** Seq ordering is scoped per conversationId — higher seq on another cid does not replace. */
+  it('does not compare or replace handles across conversations', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(2, 'conversation-a', 'cid-a'));
+    client.acceptResponseMeta(handleMeta(99, 'conversation-b', 'cid-b'));
+
+    expect(client.getSession()).toMatchObject({
+      handle: 'conversation-a',
+      highestSeq: 2,
+      conversationId: 'cid-a',
+    });
+  });
+
+  /** Multiple session keys bound to the same conversationId share highest-seq state. */
+  it('shares highest sequence state for aliases of the same conversation', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(4, 'h4', 'cid-a'), 'primary');
+    client.acceptResponseMeta(handleMeta(2, 'h2', 'cid-a'), 'alias');
+
+    expect(client.getHandle('primary')).toBe('h4');
+    expect(client.getHandle('alias')).toBe('h4');
+    expect(client.getSession('alias').highestSeq).toBe(4);
+  });
+
+  /** Fork responses accepted under a child session key must not replace the parent conversation. */
+  it('keeps a higher-sequence parent when a fork is accepted into a child session', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(2, 'parent-h2', 'parent-cid'), 'parent');
+    const fork = handleMeta(1, 'child-h1', 'child-cid');
+
+    client.acceptResponseMeta(fork, 'parent');
+    client.acceptResponseMeta(fork, 'child');
+
+    expect(client.getSession('parent')).toMatchObject({
+      handle: 'parent-h2',
+      highestSeq: 2,
+      conversationId: 'parent-cid',
+    });
+    expect(client.getSession('child')).toMatchObject({
+      handle: 'child-h1',
+      highestSeq: 1,
+      conversationId: 'child-cid',
+    });
   });
 
   /** Advisory-only meta without a handle must not update client state. */
@@ -82,6 +127,21 @@ describe('ConversationHandleClient concurrency', () => {
     });
     expect(client.getHandle()).toBe('h3');
     expect(client.getSession().highestSeq).toBe(3);
+  });
+
+  /** Responses without conversationId are ignored — seq state requires a conversation scope. */
+  it('ignores meta without a conversation id', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta({
+      [EXTENSION_ID]: {
+        handle: 'unscoped-handle',
+        seq: 1,
+        expiresAt: 4_000_000_000,
+        supersededHandlePresented: false,
+      },
+    });
+
+    expect(client.getHandle()).toBeUndefined();
   });
 
   /** Malformed seq values are ignored rather than corrupting session state. */

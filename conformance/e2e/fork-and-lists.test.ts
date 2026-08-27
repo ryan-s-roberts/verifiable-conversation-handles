@@ -1,25 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mintHandle } from '../../src/codec.js';
 import {
-  EXTENSION_ID,
-  CID_BYTE_LENGTH,
-  ERROR_CODE_HANDLE_NOT_RECOGNIZED,
-  MISSING_REQUIRED_CLIENT_CAPABILITY,
-} from '../../src/schema/draft/schema.js';
-import { CLIENT_CAPABILITIES_META_KEY } from '../../src/meta-keys.js';
-import { parseCallToolHandleError } from '../../src/errors.js';
-import {
-  acceptMetaOutOfOrder,
   callMemoryAppend,
   callMemoryRead,
-  handleMetaFromResult,
   metaFromResult,
-  startTestHarness,
-  TEST_KEYS,
   textFromResult,
   withClient,
+  withHarness,
 } from '../harness.js';
-import { OTHER_SERVER_KEYS } from './shared.js';
 
 /**
  * SEP-0000 e2e: fork and protocol invariants (§4.5, §7).
@@ -27,33 +14,52 @@ import { OTHER_SERVER_KEYS } from './shared.js';
  * Fork mints a fresh cid; tools/list is handle-independent; server may decline to mint handles.
  */
 describe('conversation-handle e2e fork and lists', () => {
-
   /** §4.5: `fork: true` mints a new conversation with empty state, not a copy of parent memory. */
   it('sep-0000-fork-mints-fresh-cid: fork mints new conversation without shared memory', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const parent = await callMemoryAppend(client, handleClient, 'parent-data');
+        await callMemoryAppend(client, handleClient, 'parent-data');
+        const parent = await callMemoryAppend(client, handleClient, 'parent-data-2');
         const parentId = (parent.handleMeta as { conversationId: string }).conversationId;
+        const parentHandle = handleClient.getHandle()!;
+        expect((parent.handleMeta as { seq: number }).seq).toBeGreaterThan(1);
         const forked = await client.callTool({
           name: 'memory_read',
           arguments: {},
           _meta: handleClient.buildRequestMeta('default', { fork: true }),
         });
-        handleClient.acceptResponseMeta((forked as { _meta?: Record<string, unknown> })._meta);
-        const forkId = (metaFromResult(forked) as { conversationId: string }).conversationId;
+        handleClient.acceptResponseMeta(
+          (forked as { _meta?: Record<string, unknown> })._meta,
+          'fork',
+        );
+        const forkMeta = metaFromResult(forked) as {
+          conversationId: string;
+          handle: string;
+          seq: number;
+        };
+        const forkId = forkMeta.conversationId;
         expect(forkId).not.toBe(parentId);
+        expect(forkMeta.seq).toBe(1);
         expect(textFromResult(forked)).toBe('[]');
+        expect(handleClient.getSession()).toMatchObject({
+          conversationId: parentId,
+          handle: parentHandle,
+        });
+        expect(handleClient.getSession('fork')).toMatchObject({
+          conversationId: forkId,
+          handle: forkMeta.handle,
+          highestSeq: 1,
+        });
+
+        const parentRead = await callMemoryRead(client, handleClient);
+        expect(textFromResult(parentRead.result)).toBe('["parent-data","parent-data-2"]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §7: handle presence must not change the tools/list catalogue. */
   it('sep-0000-lists-invariant-across-conversations: tools/list unchanged by handle presence', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const before = await client.listTools();
         await callMemoryAppend(client, handleClient, 'x');
@@ -68,15 +74,12 @@ describe('conversation-handle e2e fork and lists', () => {
         expect(lists[0].tools?.map((t) => t.name).sort()).toEqual(lists[1].tools?.map((t) => t.name).sort());
         expect((second.handleMeta as { conversationId: string }).conversationId).toBeDefined();
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §4.1: when `onMissingHandle` is `none`, responses omit handle meta entirely. */
   it('sep-0000-mint-or-decline-per-setting: no handle when configured to none', async () => {
-    const harness = await startTestHarness({ onMissingHandle: 'none' });
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const result = await client.callTool({
           name: 'memory_read',
@@ -85,8 +88,6 @@ describe('conversation-handle e2e fork and lists', () => {
         });
         expect(metaFromResult(result)).toBeUndefined();
       });
-    } finally {
-      await harness.close();
-    }
+    }, { onMissingHandle: 'none' });
   });
 });

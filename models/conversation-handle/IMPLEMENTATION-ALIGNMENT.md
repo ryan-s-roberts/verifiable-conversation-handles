@@ -73,9 +73,11 @@ invokeToolHandler (extension.ts)
 
 | Behavior | Impl | Model |
 |----------|------|-------|
-| Accept `seq >= highestSeq` | `acceptResponseMeta` | `canAccept` |
+| Accept `seq >= highestSeq` per `conversationId` | `acceptResponseMeta` keyed by `conversationId` | `canAccept` on `conversations` map |
 | Discard lower seq | early return when `seq < highestSeq` | `rejectStale` |
-| Equal seq overwrites handle | e2e + unit test | `canAccept` allows `seq == highestSeq` ✓ |
+| Reject equal seq with different handle | `seq === highestSeq && handle differs` | `canAccept` handleId guard |
+| Session key pinned to `conversationId` | `sessionConversationIds` | `sessionBindings` + `rejectCrossConversation` |
+| Fork in child session key | e2e `fork-and-lists.test.ts` | `rejectCrossConversation` when binding differs |
 
 ---
 

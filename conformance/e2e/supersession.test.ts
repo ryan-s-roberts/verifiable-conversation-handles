@@ -1,26 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { mintHandle } from '../../src/codec.js';
 import { setClientHandle } from '../../src/test-helpers.js';
 import {
-  EXTENSION_ID,
-  CID_BYTE_LENGTH,
-  ERROR_CODE_HANDLE_NOT_RECOGNIZED,
-  MISSING_REQUIRED_CLIENT_CAPABILITY,
-} from '../../src/schema/draft/schema.js';
-import { CLIENT_CAPABILITIES_META_KEY } from '../../src/meta-keys.js';
-import { parseCallToolHandleError } from '../../src/errors.js';
-import {
-  acceptMetaOutOfOrder,
   callMemoryAppend,
   callMemoryRead,
   handleMetaFromResult,
-  metaFromResult,
-  startTestHarness,
-  TEST_KEYS,
   textFromResult,
   withClient,
+  withHarness,
 } from '../harness.js';
-import { OTHER_SERVER_KEYS } from './shared.js';
 
 /**
  * SEP-0000 e2e: superseded-handle presentation (§4.3).
@@ -29,11 +16,9 @@ import { OTHER_SERVER_KEYS } from './shared.js';
  * server state — not the commitment embedded in the presented handle.
  */
 describe('conversation-handle e2e supersession', () => {
-
   /** §4.3: presenting seq < latest sets `supersededHandlePresented: true` in response meta. */
   it('sep-0000-superseded-flag-set: stale seq sets supersededHandlePresented', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
@@ -49,15 +34,12 @@ describe('conversation-handle e2e supersession', () => {
         expect(read).not.toMatchObject({ isError: true });
         expect(handleMetaFromResult(read)?.supersededHandlePresented).toBe(true);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §4.3: superseded handles are not rejected — request still succeeds. */
   it('sep-0000-supersession-not-rejected: superseded handle still succeeds', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
@@ -72,9 +54,7 @@ describe('conversation-handle e2e supersession', () => {
         expect(result).not.toMatchObject({ isError: true });
         expect(textFromResult(result)).toBe('["one","two"]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /**
@@ -82,8 +62,7 @@ describe('conversation-handle e2e supersession', () => {
    * writes), not a fork from the stale commitment.
    */
   it('sep-0000-superseded-handle-not-assumed-current: stale handle sees current state after rotation', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
@@ -99,8 +78,6 @@ describe('conversation-handle e2e supersession', () => {
         const read = await callMemoryRead(client, handleClient);
         expect(textFromResult(read.result)).toBe('["one","two","three"]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 });

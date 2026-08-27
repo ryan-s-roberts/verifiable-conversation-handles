@@ -1,5 +1,6 @@
 import { encodeHandle } from './codec.js';
 import { cidToConversationId } from './cid.js';
+import { ConversationHandleError } from './errors.js';
 import type { PluginContext } from './plugin-context.js';
 import { EXTENSION_ID } from './schema/draft/schema.js';
 import type { ConversationRecord } from './store.js';
@@ -38,5 +39,8 @@ export function mintResponseMeta(
       };
     }
   }
-  throw new Error(`failed to mint handle after ${MAX_MINT_CAS_RETRIES} seq allocation attempts`);
+  throw new ConversationHandleError(
+    'handle_invalid',
+    `failed to mint handle after ${MAX_MINT_CAS_RETRIES} seq allocation attempts`,
+  );
 }

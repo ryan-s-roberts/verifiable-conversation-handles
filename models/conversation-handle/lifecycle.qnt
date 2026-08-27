@@ -19,14 +19,15 @@ module lifecycle {
 
   const HANDLE_LIFETIME: int       // §7 handleLifetimeSeconds
   const RETENTION_SECONDS: int     // §7 conversationRetentionSeconds; §4.6
-  const ON_MISSING: str              // §7 onMissingHandle: "new" | "none"
+  const ON_MISSING: str              // §7 onMissingHandle: "new" | "none" | "reject"
+  const EXTENSION_ADVERTISED: bool   // false when client omits extension capability (inactive path)
   const MAX_TIME: int                // exploration bound for tick()
   const MAX_STATE: int             // bounds stateCommit mutations
 
   assume _ = HANDLE_LIFETIME > 0
   assume _ = RETENTION_SECONDS > 0
   assume _ = MAX_TIME >= HANDLE_LIFETIME
-  assume _ = ON_MISSING == "new" or ON_MISSING == "none"
+  assume _ = ON_MISSING == "new" or ON_MISSING == "none" or ON_MISSING == "reject"
 
   // --- types ---
 
@@ -513,8 +514,46 @@ module lifecycle {
     }
   }
 
+  // §4.1: onMissingHandle=none → unbound tool path, no establishment or mint.
+  action serveUnbound: bool = all {
+    ON_MISSING == "none",
+    EXTENSION_ADVERTISED,
+    now' = now,
+    nextCid' = nextCid,
+    conversations' = conversations,
+    retiredCids' = retiredCids,
+    issuedSeqs' = issuedSeqs,
+    lastOutcome' = Ok({ superseded: false, minted: false }),
+  }
+
+  // §8: onMissingHandle=reject → presentation fails before handler.
+  action rejectMissingHandle: bool = all {
+    ON_MISSING == "reject",
+    EXTENSION_ADVERTISED,
+    now' = now,
+    nextCid' = nextCid,
+    conversations' = conversations,
+    retiredCids' = retiredCids,
+    issuedSeqs' = issuedSeqs,
+    lastOutcome' = Rejected,
+  }
+
+  // presentation-resolver inactive path: client did not advertise extension → unbound serve.
+  action inactiveServe: bool = all {
+    not(EXTENSION_ADVERTISED),
+    now' = now,
+    nextCid' = nextCid,
+    conversations' = conversations,
+    retiredCids' = retiredCids,
+    issuedSeqs' = issuedSeqs,
+    lastOutcome' = Ok({ superseded: false, minted: false }),
+  }
+
   action step: bool = any {
     establish,
+    serveUnbound,
+    rejectMissingHandle,
+    inactiveServe,
     mutateAndRotate,
     serveWithoutRotation,
     presentSupersededHandle,
@@ -534,6 +573,7 @@ module lifecycle_small {
     HANDLE_LIFETIME = 10,
     RETENTION_SECONDS = 50,
     ON_MISSING = "new",
+    EXTENSION_ADVERTISED = true,
     MAX_TIME = 30,
     MAX_STATE = 5,
   ).*
@@ -546,61 +586,104 @@ module lifecycle_small {
 module client {
   const MAX_SEQ: int
 
-  type Principal = str
-  type Cid = int
+  type SessionKey = str
+  type ConversationId = str
 
-  // Mirrors ConversationHandleClient session state (src/client.ts).
-  type ClientSession = {
-    cid: Cid,
-    highestSeq: int,           // §4.2 advisory seq mirror for ordering only
+  // Mirrors ConversationHandleClient: conversations keyed by conversationId; session keys pin to one cid.
+  type ConversationState = {
+    highestSeq: int,
+    handleId: int,
   }
 
-  pure val PRINCIPALS: Set[Principal] = Set("alice", "bob")
+  pure val SESSION_KEYS: Set[SessionKey] = Set("default", "alias", "parent", "child")
+  pure val CONVERSATION_IDS: Set[ConversationId] = Set("cid-a", "cid-b", "parent-cid", "child-cid")
 
-  var sessions: Principal -> ClientSession
+  var conversations: ConversationId -> ConversationState
+  var sessionBindings: SessionKey -> ConversationId
   var lastAccepted: bool
 
-  // §4.2: accept when seq >= stored highest (concurrent response merge).
-  pure def canAccept(session: ClientSession, seq: int): bool = seq >= session.highestSeq
+  pure def emptyState: ConversationState = { highestSeq: 0, handleId: 0 }
 
-  pure def applyAccept(session: ClientSession, cid: Cid, seq: int): ClientSession = {
-    cid: cid,
+  // §4.2: accept when seq rises, or same seq with identical handle id.
+  pure def canAccept(state: ConversationState, seq: int, handleId: int): bool =
+    if (seq < state.highestSeq) {
+      false
+    } else if (seq == state.highestSeq and state.handleId != handleId and state.highestSeq > 0) {
+      false
+    } else {
+      true
+    }
+
+  pure def applyAccept(state: ConversationState, seq: int, handleId: int): ConversationState = {
     highestSeq: seq,
+    handleId: handleId,
   }
 
-  val clientMonotonic: bool = monotonicPerPrincipal(sessions)
+  pure def sessionAllowsCid(bindings: SessionKey -> ConversationId, sessionKey: SessionKey, conversationId: ConversationId): bool =
+    if (not(bindings.keys().contains(sessionKey))) {
+      true
+    } else {
+      bindings.get(sessionKey) == conversationId
+    }
 
-  pure def monotonicPerPrincipal(sessions: Principal -> ClientSession): bool =
-    sessions.keys().forall(p => sessions.get(p).highestSeq >= 0)
+  val clientMonotonic: bool =
+    conversations.keys().forall(cid => conversations.get(cid).highestSeq >= 0)
 
   val witnessedAccept: bool = lastAccepted
 
   action init: bool = all {
-    sessions' = PRINCIPALS.mapBy(_ => { cid: 0, highestSeq: 0 }),
+    conversations' = Map(),
+    sessionBindings' = Map(),
     lastAccepted' = false,
   }
 
-  // acceptResponseMeta: store handle when advisory seq is not lower than highest.
   action acceptResponse: bool = {
-    nondet principal = PRINCIPALS.oneOf()
-    nondet cid = 1.to(3).oneOf()
+    nondet sessionKey = SESSION_KEYS.oneOf()
+    nondet conversationId = CONVERSATION_IDS.oneOf()
     nondet seq = 0.to(MAX_SEQ).oneOf()
-    val session = sessions.get(principal)
+    nondet handleId = 0.to(9).oneOf()
+    val state =
+      if (conversations.keys().contains(conversationId)) {
+        conversations.get(conversationId)
+      } else {
+        emptyState
+      }
     all {
-      canAccept(session, seq),
-      sessions' = sessions.set(principal, applyAccept(session, cid, seq)),
+      sessionAllowsCid(sessionBindings, sessionKey, conversationId),
+      canAccept(state, seq, handleId),
+      conversations' = conversations.put(conversationId, applyAccept(state, seq, handleId)),
+      sessionBindings' = sessionBindings.put(sessionKey, conversationId),
       lastAccepted' = true,
     }
   }
 
-  // §4.2 SHOULD discard lower-seq responses (out-of-order concurrent delivery).
   action rejectStale: bool = {
-    nondet principal = PRINCIPALS.oneOf()
+    nondet sessionKey = SESSION_KEYS.oneOf()
+    nondet conversationId = CONVERSATION_IDS.oneOf()
     nondet seq = 0.to(MAX_SEQ).oneOf()
-    val session = sessions.get(principal)
+    val state =
+      if (conversations.keys().contains(conversationId)) {
+        conversations.get(conversationId)
+      } else {
+        emptyState
+      }
     all {
-      seq < session.highestSeq,
-      sessions' = sessions,
+      sessionAllowsCid(sessionBindings, sessionKey, conversationId),
+      seq < state.highestSeq,
+      conversations' = conversations,
+      sessionBindings' = sessionBindings,
+      lastAccepted' = false,
+    }
+  }
+
+  action rejectCrossConversation: bool = {
+    nondet sessionKey = SESSION_KEYS.oneOf()
+    nondet conversationId = CONVERSATION_IDS.oneOf()
+    all {
+      sessionBindings.keys().contains(sessionKey),
+      sessionBindings.get(sessionKey) != conversationId,
+      conversations' = conversations,
+      sessionBindings' = sessionBindings,
       lastAccepted' = false,
     }
   }
@@ -608,6 +691,7 @@ module client {
   action step: bool = any {
     acceptResponse,
     rejectStale,
+    rejectCrossConversation,
   }
 }
 

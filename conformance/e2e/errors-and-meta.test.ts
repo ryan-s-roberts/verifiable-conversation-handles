@@ -10,18 +10,14 @@ import {
 } from '../../src/schema/draft/schema.js';
 import { CLIENT_CAPABILITIES_META_KEY } from '../../src/meta-keys.js';
 import { parseCallToolHandleError } from '../../src/errors.js';
+import { OTHER_SERVER_KEYS } from './shared.js';
 import {
-  acceptMetaOutOfOrder,
   callMemoryAppend,
   callMemoryRead,
-  handleMetaFromResult,
-  metaFromResult,
-  startTestHarness,
-  TEST_KEYS,
   textFromResult,
   withClient,
+  withHarness,
 } from '../harness.js';
-import { OTHER_SERVER_KEYS } from './shared.js';
 
 /**
  * SEP-0000 e2e: errors, retention, and request meta (§5.1, §6, §8).
@@ -30,11 +26,9 @@ import { OTHER_SERVER_KEYS } from './shared.js';
  * missing capability advertisement, and handle placement in `_meta`.
  */
 describe('conversation-handle e2e errors and meta', () => {
-
   /** §5.1: client-advertised `maxHandleBytes` rejects oversized server handles before send. */
   it('sep-0000-respect-max-handle-bytes: rejects handles above client maxHandleBytes', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       let stolen = '';
       let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
@@ -59,15 +53,12 @@ describe('conversation-handle e2e errors and meta', () => {
         expect(read).toMatchObject({ isError: true });
         expect(textFromResult(read)).toMatch(/maxHandleBytes/i);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §8: tampered handle yields normative code, message, reason, and actionable remediation. */
   it('sep-0000-error-code-range + sep-0000-actionable-failure-error: handle errors use normative §8 envelope', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const result = await callMemoryAppend(client, handleClient, 'x');
         const conversationId = (result.handleMeta as { conversationId: string }).conversationId;
@@ -91,16 +82,13 @@ describe('conversation-handle e2e errors and meta', () => {
         });
         expect(envelope?.data.remediation).toMatch(/re-send|omit/i);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §2.3: after retention purge, presenting a handle for a retired cid is rejected. */
   it('sep-0000-retired-cid-not-silently-reused: retired conversation handle is rejected', async () => {
     let now = 1_000_000;
-    const harness = await startTestHarness({ now: () => now, retentionSeconds: 60 });
-    try {
+    await withHarness(async (harness) => {
       let retiredHandle = '';
       let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
@@ -124,15 +112,12 @@ describe('conversation-handle e2e errors and meta', () => {
         expect(read).toMatchObject({ isError: true });
         expect(textFromResult(read)).toMatch(/retired/i);
       });
-    } finally {
-      await harness.close();
-    }
+    }, { now: () => now, retentionSeconds: 60 });
   });
 
   /** §6: handles minted with another deployment's keys fail integrity verification. */
   it('sep-0000-handle-rejected-by-other-server: foreign deployment keys are not honoured', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const foreignCid = new Uint8Array(CID_BYTE_LENGTH).fill(0xcd);
         const foreign = mintHandle(OTHER_SERVER_KEYS, {
@@ -146,15 +131,12 @@ describe('conversation-handle e2e errors and meta', () => {
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/integrity|invalid/i);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §5.1: request without client extension capability advertisement is rejected. */
   it('sep-0000-missing-capability-error: handle without client extension advertisement is rejected', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'x');
         const handle = handleClient.getHandle()!;
@@ -169,15 +151,12 @@ describe('conversation-handle e2e errors and meta', () => {
         const envelope = parseCallToolHandleError(result);
         expect(envelope?.code).toBe(MISSING_REQUIRED_CLIENT_CAPABILITY);
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 
   /** §5.1: handle is carried only in request `_meta[extension].handle`, not tool arguments. */
   it('sep-0000-handle-carried-in-meta: handle travels in extension request meta', async () => {
-    const harness = await startTestHarness();
-    try {
+    await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'meta-path');
         const meta = handleClient.buildRequestMeta();
@@ -189,8 +168,6 @@ describe('conversation-handle e2e errors and meta', () => {
         });
         expect(textFromResult(read)).toBe('["meta-path"]');
       });
-    } finally {
-      await harness.close();
-    }
+    });
   });
 });
