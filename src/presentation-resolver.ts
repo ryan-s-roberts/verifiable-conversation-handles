@@ -26,15 +26,16 @@ function presentFailure(
   return { ok: false, failure: { reason, message, code } };
 }
 
+function unknownConversationFailure(): PresentHandleResult {
+  return presentFailure('handle_invalid', 'Conversation handle not recognised');
+}
+
 function verifyOwnership(
   record: ConversationRecord,
   principal: string | undefined,
 ): PresentHandleResult | null {
-  if (!principal) {
-    return presentFailure('unauthenticated', 'authenticated principal required to access conversation state');
-  }
-  if (record.principal !== principal) {
-    return presentFailure('principal_mismatch', 'presented handle is not owned by the authenticated principal');
+  if (!principal || record.principal !== principal) {
+    return unknownConversationFailure();
   }
   return null;
 }
@@ -84,26 +85,26 @@ export function presentHandle(ctx: PluginContext, requestCtx: ServerContext): Pr
     decoded = decodeHandle(ctx.keys, presentedHandle, { maxBytes: maxHandleBytes, now: ctx.nowSec });
   } catch (error) {
     if (error instanceof ConversationHandleError) {
+      if (error.reason === 'handle_invalid') {
+        return unknownConversationFailure();
+      }
       return presentFailure(error.reason, error.message, error.code);
     }
-    return presentFailure(
-      'handle_invalid',
-      error instanceof Error ? error.message : 'handle integrity check failed',
-    );
-  }
-
-  if (ctx.store.isRetired(decoded.cid)) {
-    return presentFailure('handle_retired', 'conversation has been retired');
+    return unknownConversationFailure();
   }
 
   const record = ctx.store.get(decoded.cid);
   if (!record) {
-    return presentFailure('handle_invalid', 'conversation not found for presented handle');
+    return unknownConversationFailure();
   }
 
   const ownershipFailure = verifyOwnership(record, principal);
   if (ownershipFailure) {
     return ownershipFailure;
+  }
+
+  if (ctx.store.isRetired(decoded.cid)) {
+    return presentFailure('handle_retired', 'conversation has been retired');
   }
 
   if (decoded.exp <= ctx.nowSec()) {

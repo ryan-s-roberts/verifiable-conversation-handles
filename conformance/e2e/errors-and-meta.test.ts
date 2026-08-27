@@ -99,6 +99,7 @@ describe('conversation-handle e2e errors and meta', () => {
         });
         expect(read).toMatchObject({ isError: true });
         expect(textFromResult(read)).toMatch(/retired/i);
+        expect(parseCallToolHandleError(read)?.data.reason).toBe('handle_retired');
       });
     } finally {
       await harness.close();
@@ -118,7 +119,7 @@ describe('conversation-handle e2e errors and meta', () => {
         handleClient.testOnlySetHandle(foreign);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
-        expect(textFromResult(read.result)).toMatch(/integrity|invalid/i);
+        expect(textFromResult(read.result)).toBe('Conversation handle not recognised');
       });
     } finally {
       await harness.close();

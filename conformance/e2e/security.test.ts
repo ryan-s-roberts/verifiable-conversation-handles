@@ -3,6 +3,7 @@ import { flipHandleByte, mintHandle } from '../../src/codec.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
+  ERROR_EXTENSION_META_KEY,
   ERROR_CODE_HANDLE_NOT_RECOGNIZED,
   MISSING_REQUIRED_CLIENT_CAPABILITY,
 } from '../../src/schema/draft/schema.js';
@@ -46,8 +47,59 @@ describe('conversation-handle e2e security', () => {
         handleClient.testOnlySetHandle(mutated);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
-        expect(textFromResult(read.result)).toContain('integrity');
+        expect(textFromResult(read.result)).toBe('Conversation handle not recognised');
       });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('invalid and unauthorised handle failures are externally indistinguishable', async () => {
+    const harness = await startTestHarness();
+    try {
+      let handle = '';
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callMemoryAppend(client, handleClient, 'secret');
+        handle = handleClient.getHandle()!;
+      });
+
+      const readWithHandle = (token: string | undefined, presentedHandle: string) =>
+        withClient(harness, token, async (client, handleClient) => {
+          handleClient.testOnlySetHandle(presentedHandle);
+          return (await callMemoryRead(client, handleClient)).result;
+        });
+
+      const invalid = await readWithHandle('alice', flipHandleByte(handle));
+      const liveNonOwner = await readWithHandle('bob', handle);
+      const unauthenticated = await readWithHandle(undefined, handle);
+
+      const record = harness.manager.store.listRecords()[0]!;
+      harness.manager.store.markRetired(record.cid);
+      const retiredNonOwner = await readWithHandle('bob', handle);
+
+      expect(invalid).toEqual({
+        isError: true,
+        content: [{ type: 'text', text: 'Conversation handle not recognised' }],
+        _meta: {
+          [ERROR_EXTENSION_META_KEY]: {
+            code: ERROR_CODE_HANDLE_NOT_RECOGNIZED,
+            message: 'Conversation handle not recognised',
+            data: {
+              extension: EXTENSION_ID,
+              reason: 'handle_invalid',
+              remediation:
+                'Re-send with the most recently received handle, or omit it to start a new conversation. Conversation-scoped preferences are not available without one.',
+            },
+          },
+          'io.modelcontextprotocol/serverInfo': {
+            name: 'conversation-handle-test',
+            version: '0.0.0',
+          },
+        },
+      });
+      expect(liveNonOwner).toEqual(invalid);
+      expect(retiredNonOwner).toEqual(invalid);
+      expect(unauthenticated).toEqual(invalid);
     } finally {
       await harness.close();
     }
@@ -65,7 +117,7 @@ describe('conversation-handle e2e security', () => {
         handleClient.testOnlySetHandle(stolen);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
-        expect(textFromResult(read.result)).toMatch(/principal|not own/i);
+        expect(textFromResult(read.result)).toBe('Conversation handle not recognised');
       });
     } finally {
       await harness.close();
