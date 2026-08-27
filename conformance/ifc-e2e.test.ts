@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { decodeHandle } from '../src/codec.js';
-import { decodeLabelHead } from '../src/fixtures/label-head.js';
 import { parseCallToolHandleError } from '../src/errors.js';
 import {
   callEgressPost,
@@ -12,10 +11,9 @@ import {
   withClient,
 } from './harness.js';
 
-/** Decode the §3 state-commitment bytes carried inside a handle (label-journal head in this fixture). */
-function stateLabelsFromHandle(handle: string): string[] {
-  const decoded = decodeHandle(TEST_KEYS, handle);
-  return decodeLabelHead(decoded.state);
+/** Decode the opaque §3 state-commitment bytes carried inside a handle. */
+function stateFromHandle(handle: string): Uint8Array {
+  return decodeHandle(TEST_KEYS, handle).state;
 }
 
 /**
@@ -24,7 +22,7 @@ function stateLabelsFromHandle(handle: string): string[] {
  * The protocol supplies unforgeable conversation identity and an opaque state commitment; label
  * enforcement is server policy. This fixture models an information-flow runtime that:
  *   - keys a taint journal on `cid` (§2.2),
- *   - embeds the journal head in the state commitment (§3),
+ *   - embeds a fixed-size commitment to the journal head (§3),
  *   - applies **current** authoritative labels on every request, including superseded handles (§4.3),
  *   - rejects missing handles after principal-level taint (§8 omission-as-maximum-taint policy).
  */
@@ -33,7 +31,7 @@ describe('ifc use-case e2e', () => {
    * §3 (state commitment) + §4.2 (rotation on commitment drift) + §4.3 (IFC supersession policy).
    *
    * Narrative: Alice starts clean and egress succeeds. `receive_pii` is a read-like boundary crossing
-   * that taints the journal; the server rotates a handle whose commitment now names `pii`. Further
+   * that taints the journal; the server rotates a handle whose commitment now changes. Further
    * egress on the current handle is blocked.
    *
    * Stale-handle replay (pre-PII handle with an empty commitment) must not roll back taint: §4.3
@@ -41,7 +39,7 @@ describe('ifc use-case e2e', () => {
    * labels instead. The journal still records `pii` for this principal/cid, so egress remains blocked
    * even though the replayed handle's state bytes are clean.
    */
-  it('ifc-use-case: egress blocked after PII received; state commitment carries label head', async () => {
+  it('ifc-use-case: egress blocked after PII received; state commitment tracks label head', async () => {
     const harness = await startIfcTestHarness();
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
@@ -51,19 +49,23 @@ describe('ifc use-case e2e', () => {
 
         const prePiiHandle = handleClient.getHandle()!;
         const prePiiSeq = (clean.handleMeta as { seq: number }).seq;
-        expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
+        const prePiiState = stateFromHandle(prePiiHandle);
+        expect(prePiiState).toHaveLength(32);
 
         const pii = await callReceivePii(client, handleClient);
         expect(textFromResult(pii.result)).toContain('ssn-123-45-6789');
         const postPiiHandle = (pii.handleMeta as { handle: string }).handle;
-        expect(stateLabelsFromHandle(postPiiHandle)).toEqual(['pii']);
+        const postPiiState = stateFromHandle(postPiiHandle);
+        expect(postPiiState).toHaveLength(32);
+        expect(postPiiState).not.toEqual(prePiiState);
+        expect(Buffer.from(postPiiHandle, 'base64url').includes(Buffer.from('pii'))).toBe(false);
 
         const blocked = await callEgressPost(client, handleClient, 'webhook', 'exfil attempt');
         expect(blocked.result).toMatchObject({ isError: true });
         expect(textFromResult(blocked.result)).toMatch(/egress blocked.*pii/i);
 
         handleClient.testOnlySetSession({ handle: prePiiHandle, highestSeq: prePiiSeq });
-        expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
+        expect(stateFromHandle(prePiiHandle)).toEqual(prePiiState);
 
         const stillBlocked = await callEgressPost(client, handleClient, 'webhook', 'stale handle exfil');
         expect(stillBlocked.result).toMatchObject({ isError: true });
@@ -97,7 +99,7 @@ describe('ifc use-case e2e', () => {
         });
         const forkMeta = handleMetaFromResult(forked);
         expect(forkMeta).toBeDefined();
-        expect(stateLabelsFromHandle(forkMeta!.handle)).toEqual([]);
+        expect(stateFromHandle(forkMeta!.handle)).toHaveLength(32);
 
         await callReceivePii(client, handleClient);
 
@@ -172,7 +174,7 @@ describe('ifc use-case e2e', () => {
       await withClient(harness, 'bob', async (client, handleClient) => {
         const result = await callEgressPost(client, handleClient, 'analytics', 'other-principal');
         expect(result.result).not.toMatchObject({ isError: true });
-        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual([]);
+        expect(stateFromHandle(handleClient.getHandle()!)).toHaveLength(32);
       });
     } finally {
       await harness.close();

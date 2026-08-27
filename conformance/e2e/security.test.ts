@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { decodeHandle, flipHandleByte, mintHandle } from '../../src/codec.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
@@ -66,6 +66,23 @@ describe('conversation-handle e2e security', () => {
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/principal|not own/i);
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('fixture state commitment does not expose conversation memory', async () => {
+    const harness = await startTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        const sensitive = 'private-memory-4c7f61e9';
+        await callMemoryAppend(client, handleClient, sensitive);
+        const handle = handleClient.getHandle()!;
+        const decoded = decodeHandle(TEST_KEYS, handle);
+
+        expect(decoded.state).toHaveLength(32);
+        expect(Buffer.from(handle, 'base64url').includes(Buffer.from(sensitive))).toBe(false);
       });
     } finally {
       await harness.close();
