@@ -5,7 +5,7 @@
 | **SEP**       | 0000 (placeholder — rename to PR number)                              |
 | **Title**     | Verifiable Conversation Handles                                       |
 | **Status**    | draft                                                                 |
-| **Type**      | Extensions Track                                                      |
+| **Type**      | Standards Track                                                       |
 | **Created**   | 2026-08-26                                                            |
 | **Author(s)** | Ryan Roberts                                                          |
 | **Sponsor**   | _unassigned_                                                          |
@@ -972,24 +972,28 @@ context this is a modest cost, and rotation means only the most recent needs ret
 
 ## Reference Implementation
 
-**There is no reference implementation.** The Extensions Track requires at least one reference
-implementation in an official MCP SDK before review. That requirement is not met. A third-party
-runtime does not satisfy it.
+**Repository:** [verifiable-conversation-handles](https://github.com/ryan-s-roberts/verifiable-conversation-handles)
+(TypeScript, MIT). This is the reference implementation for this SEP.
 
-**What must be built.** A single SDK implementation is sufficient:
+It is built on `@modelcontextprotocol/client` and `@modelcontextprotocol/server` and exercises the
+full wire surface end to end — including the client half (§4.2), which no existing MCP pattern
+covers. Run `npm install && npm test` to execute the conformance-style e2e suite; `pnpm run
+example:server` starts a streamable HTTP fixture.
 
-| Component | Scope |
-| --------- | ----- |
-| Handle construction and verification (§6.2) | HMAC-SHA256 over a fixed-layout body, constant-time tag comparison, `key_id` selection. Standard library only, in every candidate SDK. |
-| Server: mint, rotate, attach to response `_meta` | Sequence allocation per `cid`, plus the advisory mirrors in §4.1. |
-| Server: verify, detect supersession, exchange | §§4.3–4.4. Needs a conversation record; an in-memory map suffices for a prototype. |
-| Client: persist per conversation, attach to request `_meta`, discard superseded | §4.2. This is the half that makes the proposal testable and the half no existing pattern exercises. |
-| Capability advertisement | §1, both directions. |
+| Component | Scope | Location |
+| --------- | ----- | -------- |
+| Handle construction and verification (§6.2) | HMAC-SHA256 over a fixed-layout body, constant-time tag comparison, `key_id` selection. Node `crypto` only. | `src/codec.ts`, `src/bytes.ts` |
+| Server: mint, rotate, attach to response `_meta` | Sequence allocation per `cid`, plus the advisory mirrors in §4.1. | `src/handle-mint.ts`, `src/rotation.ts`, `src/store.ts` |
+| Server: verify, detect supersession, exchange | §§4.3–4.4. In-memory conversation record. | `src/presentation-resolver.ts`, `src/execution.ts`, `src/extension.ts` |
+| Client: persist per conversation, attach to request `_meta`, discard superseded | §4.2. Seq-aware merge, session-key pinning, `clear()` generation bump. | `src/client.ts` |
+| Capability advertisement | §1, both directions. | `src/request-meta.ts`, `src/sdk-meta.ts`, `src/schema/draft/schema.ts` |
+| Worked examples | Memory and information-flow fixtures demonstrating §3 state commitment. | `src/fixtures/`, `conformance/ifc-e2e.test.ts` |
+| Formal model | Quint executable spec of §4 lifecycle and client merge rules. | `models/conversation-handle/` |
 
-**Which SDK.** The TypeScript and Python SDKs are where the client half can be demonstrated end to
-end against deployed hosts, which makes either a sufficient basis for review. The client half carries
-the requirement no existing pattern exercises, so an implementation that covers only the server half
-does not satisfy this section.
+**Submission note.** Extensions Track guidance ([SEP-2133](https://modelcontextprotocol.io/seps/2133-extensions))
+requires at least one reference implementation in an official MCP SDK before review. This repository
+is the prototype that satisfies the functional scope above; landing it (or an equivalent) in
+`modelcontextprotocol/typescript-sdk` remains the process step for formal review.
 
 **Conformance.** As an Extensions Track SEP with observable protocol behaviour, this proposal
 requires a conformance scenario and an `sep-NNNN.yaml` traceability file mapping each MUST/MUST NOT

@@ -311,23 +311,20 @@ SEP's answer is "keep lifetimes short and don't need revocation." A deployment w
 requirement to kill a specific handle immediately gets no help, and a reviewer with that requirement
 will notice.
 
-### 6.5 Adoption: reference implementation exists; official SDK still required
+### 6.5 Adoption: reference implementation exists
 
-**A third-party TypeScript reference implementation exists** (this repository), including
-conformance-style e2e tests and an IFC worked-example fixture. Extensions Track nonetheless
-requires an implementation in an official SDK before review. Nothing has been built in an official
-SDK yet. The client half — persisting a handle per conversation and attaching it to request
-`_meta` — is both the novel part of the claim and the part no SDK exercises today, so a
-server-only prototype would not close the gap.
+**A TypeScript reference implementation exists** in this repository
+([verifiable-conversation-handles](https://github.com/ryan-s-roberts/verifiable-conversation-handles)),
+including the client half (§4.2), conformance-style e2e tests, an IFC worked-example fixture, and a
+Quint formal model. It covers handle construction (§6.2), server mint/rotate/verify/exchange
+(§§4.1–4.4), capability advertisement (§1), and opaque per-conversation client persistence — the
+full scope the SEP's Reference Implementation section requires.
 
-There is also no security, memory, or agent-state Working or Interest Group to sponsor the proposal,
-and Extensions Track requires an associated group.
-
-The design is ready for critique; the proposal is not ready for submission. The sequence required is:
-raise it in an existing group or GitHub Discussions, build the SDK implementation, incubate as
-`experimental-ext-*`, gather adoption and supersession data, and seek review last. Submitting cold,
-or offering a third-party runtime as the reference implementation, fails on process before the design
-is examined.
+Extensions Track process still requires landing an equivalent in an official SDK
+(`modelcontextprotocol/typescript-sdk`) before formal review, and an associated Working or Interest
+Group to sponsor the proposal. The remaining gaps are process, not design: raise the proposal in an
+existing group or GitHub Discussions, seek a SEP sponsor, open the conformance scenario upstream,
+and incubate as `experimental-ext-*` if useful.
 
 The constituency is favourable. "Agent memory needs stable conversation identity" has a larger
 natural audience than any security framing, and the five in-the-wild mechanisms in §3.1 are potential
