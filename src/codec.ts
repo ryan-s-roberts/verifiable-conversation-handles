@@ -124,13 +124,6 @@ export function verifyHandle(
   return { version, keyId, cid: new Uint8Array(cid), exp, seq, state: new Uint8Array(state) };
 }
 
-export function flipHandleByte(handle: string): string {
-  const raw = decodeBase64Url(handle);
-  const mutated = Buffer.from(raw);
-  mutated[mutated.length - 1]! ^= 0x01;
-  return encodeBase64Url(mutated);
-}
-
 export interface DecodeHandleOptions {
   maxBytes?: number;
   now?: () => number;

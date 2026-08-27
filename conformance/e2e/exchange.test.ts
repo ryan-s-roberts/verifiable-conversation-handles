@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { mintHandle } from '../../src/codec.js';
+import { setClientHandle } from '../../src/test-helpers.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
@@ -32,7 +33,7 @@ describe('conversation-handle e2e exchange', () => {
         const conversationId = (first.handleMeta as { conversationId: string }).conversationId;
         const expired = handleClient.getHandle()!;
         now = 4_000_000_001;
-        handleClient.testOnlySetHandle(expired);
+        setClientHandle(handleClient, expired, conversationId);
         const exchanged = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -57,10 +58,11 @@ describe('conversation-handle e2e exchange', () => {
     const harness = await startTestHarness({ now: () => now });
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'x');
+        const first = await callMemoryAppend(client, handleClient, 'x');
+        const conversationId = (first.handleMeta as { conversationId: string }).conversationId;
         const expired = handleClient.getHandle()!;
         now = 4_000_000_001;
-        handleClient.testOnlySetHandle(expired);
+        setClientHandle(handleClient, expired, conversationId);
         const exchanged = await client.callTool({
           name: 'memory_read',
           arguments: {},

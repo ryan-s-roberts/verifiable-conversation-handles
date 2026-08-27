@@ -115,28 +115,6 @@ export class ConversationHandleClient {
     this.sessions.delete(sessionKey);
   }
 
-  /** Test-only injection of session state without parsing the handle. */
-  testOnlySetSession(
-    session: { handle?: string; highestSeq?: number; conversationId?: string },
-    sessionKey = 'default',
-  ): void {
-    const target = this.getOrCreateSession(sessionKey);
-    if (session.handle !== undefined) {
-      target.handle = session.handle;
-    }
-    if (session.highestSeq !== undefined) {
-      target.highestSeq = session.highestSeq;
-    }
-    if (session.conversationId !== undefined) {
-      target.conversationId = session.conversationId;
-    }
-  }
-
-  /** @deprecated Use testOnlySetSession for handle + seq together. */
-  testOnlySetHandle(handle: string, sessionKey = 'default'): void {
-    this.testOnlySetSession({ handle }, sessionKey);
-  }
-
   private getOrCreateSession(sessionKey: string): ConversationSession {
     let session = this.sessions.get(sessionKey);
     if (!session) {

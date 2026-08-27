@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { mintHandle } from '../../src/codec.js';
+import { setClientHandle } from '../../src/test-helpers.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
@@ -29,8 +30,9 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
+        const conversationId = handleClient.getSession().conversationId!;
         await callMemoryAppend(client, handleClient, 'two');
-        handleClient.testOnlySetHandle(stale);
+        setClientHandle(handleClient, stale, conversationId);
         const read = await client.callTool({
           name: 'memory_append',
           arguments: { text: 'three' },
@@ -51,8 +53,9 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
+        const conversationId = handleClient.getSession().conversationId!;
         await callMemoryAppend(client, handleClient, 'two');
-        handleClient.testOnlySetHandle(stale);
+        setClientHandle(handleClient, stale, conversationId);
         const result = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -72,8 +75,9 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
+        const conversationId = handleClient.getSession().conversationId!;
         await callMemoryAppend(client, handleClient, 'two');
-        handleClient.testOnlySetHandle(stale);
+        setClientHandle(handleClient, stale, conversationId);
         const append = await client.callTool({
           name: 'memory_append',
           arguments: { text: 'three' },

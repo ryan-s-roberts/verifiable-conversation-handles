@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { mintHandle } from '../../src/codec.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,

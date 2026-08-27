@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeHandle } from '../src/codec.js';
 import { decodeLabelHead } from '../src/fixtures/label-head.js';
 import { parseCallToolHandleError } from '../src/errors.js';
+import { setClientSession } from '../src/test-helpers.js';
 import {
   callEgressPost,
   callReceivePii,
@@ -51,6 +52,7 @@ describe('ifc use-case e2e', () => {
 
         const prePiiHandle = handleClient.getHandle()!;
         const prePiiSeq = (clean.handleMeta as { seq: number }).seq;
+        const conversationId = (clean.handleMeta as { conversationId: string }).conversationId;
         expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
 
         const pii = await callReceivePii(client, handleClient);
@@ -62,7 +64,11 @@ describe('ifc use-case e2e', () => {
         expect(blocked.result).toMatchObject({ isError: true });
         expect(textFromResult(blocked.result)).toMatch(/egress blocked.*pii/i);
 
-        handleClient.testOnlySetSession({ handle: prePiiHandle, highestSeq: prePiiSeq });
+        setClientSession(handleClient, {
+          handle: prePiiHandle,
+          highestSeq: prePiiSeq,
+          conversationId,
+        });
         expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
 
         const stillBlocked = await callEgressPost(client, handleClient, 'webhook', 'stale handle exfil');
@@ -101,10 +107,10 @@ describe('ifc use-case e2e', () => {
 
         await callReceivePii(client, handleClient);
 
-        handleClient.testOnlySetSession({
+        setClientSession(handleClient, {
           handle: forkMeta!.handle,
           highestSeq: forkMeta!.seq,
-          conversationId: forkMeta!.conversationId,
+          conversationId: forkMeta!.conversationId!,
         });
         const blocked = await client.callTool({
           name: 'egress_post',

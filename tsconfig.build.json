@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/index.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/fixtures/**",
+    "src/http-auth.ts",
+    "src/http-server.ts",
+    "src/test-helpers.ts"
+  ]
+}

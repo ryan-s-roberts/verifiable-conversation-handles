@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { mintHandle } from '../../src/codec.js';
+import { flipHandleByte, setClientHandle } from '../../src/test-helpers.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
@@ -41,9 +42,10 @@ describe('conversation-handle e2e security', () => {
     const harness = await startTestHarness();
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'opaque');
+        const { handleMeta } = await callMemoryAppend(client, handleClient, 'opaque');
         const mutated = flipHandleByte(handleClient.getHandle()!);
-        handleClient.testOnlySetHandle(mutated);
+        const conversationId = (handleMeta as { conversationId: string }).conversationId;
+        setClientHandle(handleClient, mutated, conversationId);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toContain('integrity');
@@ -57,12 +59,14 @@ describe('conversation-handle e2e security', () => {
     const harness = await startTestHarness();
     try {
       let stolen = '';
+      let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'secret');
+        const result = await callMemoryAppend(client, handleClient, 'secret');
         stolen = handleClient.getHandle()!;
+        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
       });
       await withClient(harness, 'bob', async (client, handleClient) => {
-        handleClient.testOnlySetHandle(stolen);
+        setClientHandle(handleClient, stolen, conversationId);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/principal|not own/i);
@@ -76,12 +80,14 @@ describe('conversation-handle e2e security', () => {
     const harness = await startTestHarness();
     try {
       let stolen = '';
+      let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'secret');
+        const result = await callMemoryAppend(client, handleClient, 'secret');
         stolen = handleClient.getHandle()!;
+        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
       });
       await withClient(harness, undefined, async (client, handleClient) => {
-        handleClient.testOnlySetHandle(stolen);
+        setClientHandle(handleClient, stolen, conversationId);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
       });

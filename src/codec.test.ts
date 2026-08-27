@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle, verifyHandle, type HandleKey } from './codec.js';
+import { mintHandle, verifyHandle, type HandleKey } from './codec.js';
 import { CID_BYTE_LENGTH } from './schema/draft/schema.js';
+import { flipHandleByte } from './test-helpers.js';
 
 const keys: HandleKey[] = [
   { keyId: 0, secret: Buffer.from('primary-key-material-32-bytes!!') },

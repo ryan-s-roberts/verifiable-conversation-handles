@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { flipHandleByte, mintHandle } from '../../src/codec.js';
+import { cidToConversationId } from '../../src/cid.js';
+import { mintHandle } from '../../src/codec.js';
+import { flipHandleByte, setClientHandle, setClientSession } from '../../src/test-helpers.js';
 import {
   EXTENSION_ID,
   CID_BYTE_LENGTH,
@@ -27,12 +29,14 @@ describe('conversation-handle e2e errors and meta', () => {
     const harness = await startTestHarness();
     try {
       let stolen = '';
+      let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'x');
+        const result = await callMemoryAppend(client, handleClient, 'x');
         stolen = handleClient.getHandle()!;
+        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
       });
       await withClient(harness, 'alice', async (client, handleClient) => {
-        handleClient.testOnlySetHandle(stolen);
+        setClientHandle(handleClient, stolen, conversationId);
         const meta = {
           ...handleClient.buildRequestMeta(),
           [CLIENT_CAPABILITIES_META_KEY]: {
@@ -57,8 +61,13 @@ describe('conversation-handle e2e errors and meta', () => {
     const harness = await startTestHarness();
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'x');
-        handleClient.testOnlySetHandle(flipHandleByte(handleClient.getHandle()!));
+        const result = await callMemoryAppend(client, handleClient, 'x');
+        const conversationId = (result.handleMeta as { conversationId: string }).conversationId;
+        setClientHandle(
+          handleClient,
+          flipHandleByte(handleClient.getHandle()!),
+          conversationId,
+        );
         const read = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -84,14 +93,20 @@ describe('conversation-handle e2e errors and meta', () => {
     const harness = await startTestHarness({ now: () => now, retentionSeconds: 60 });
     try {
       let retiredHandle = '';
+      let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
-        await callMemoryAppend(client, handleClient, 'old');
+        const result = await callMemoryAppend(client, handleClient, 'old');
         retiredHandle = handleClient.getHandle()!;
+        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
         now += 120_000;
         expect(harness.manager.purgeExpiredConversations()).toBe(1);
       });
       await withClient(harness, 'alice', async (client, handleClient) => {
-        handleClient.testOnlySetSession({ handle: retiredHandle, highestSeq: 1 });
+        setClientSession(handleClient, {
+          handle: retiredHandle,
+          highestSeq: 1,
+          conversationId,
+        });
         const read = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -109,13 +124,14 @@ describe('conversation-handle e2e errors and meta', () => {
     const harness = await startTestHarness();
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
+        const foreignCid = new Uint8Array(CID_BYTE_LENGTH).fill(0xcd);
         const foreign = mintHandle(OTHER_SERVER_KEYS, {
-          cid: new Uint8Array(CID_BYTE_LENGTH).fill(0xcd),
+          cid: foreignCid,
           exp: 4_000_000_000,
           seq: 1,
           keyId: 0,
         });
-        handleClient.testOnlySetHandle(foreign);
+        setClientHandle(handleClient, foreign, cidToConversationId(foreignCid));
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/integrity|invalid/i);
