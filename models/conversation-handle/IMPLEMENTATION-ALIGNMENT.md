@@ -77,7 +77,7 @@ invokeToolHandler (extension.ts)
 | Discard lower seq | early return when `seq < highestSeq` | `rejectStale` |
 | Reject equal seq with different handle | `seq === highestSeq && handle differs` | `canAccept` handleId guard |
 | Session key pinned to `conversationId` | `sessionConversationIds` | `sessionBindings` + `rejectCrossConversation` |
-| Fork in child session key | e2e `fork-and-lists.test.ts` | `rejectCrossConversation` when binding differs |
+| Fork in child session key | e2e `fork-and-lists.test.ts` | `rejectCrossConversation` + `clearSession` |
 
 ---
 
@@ -87,8 +87,8 @@ These exist in `src/` but have **no dedicated Quint action** or invariant.
 
 | Path | Implementation | Model gap |
 |------|----------------|-----------|
-| **Inactive** | `presentation.kind === 'inactive'` when client does not advertise extension (`presentation-resolver.ts:59–60`) | No `inactive` presentation; server not in “extension mode” |
-| **Handle without capability** | Handle in `_meta` but no client extension → `MISSING_REQUIRED_CLIENT_CAPABILITY` | Not modeled |
+| **Inactive** | `presentation.kind === 'inactive'` when client does not advertise extension (`presentation-resolver.ts:59–60`) | `inactiveServe` action ✓ |
+| **Handle without capability** | Handle in `_meta` but no client extension → `MISSING_REQUIRED_CLIENT_CAPABILITY` | `rejectPresentedWithoutCapability` ✓ |
 | **`onMissingHandle: 'none'`** | `absent` + `mintOnResponse: false` → `unbound`, no mint (`execution.ts:97–98`) | Only `ON_MISSING == "new"` enables `establish` |
 | **`onMissingHandle: 'reject'`** | `presentFailure('handle_missing')` | Not modeled |
 | **Unauthenticated establish** | `buildExecutionPlan` fails if no principal on `absent` | `establish` always picks a principal |
@@ -150,9 +150,9 @@ E2e coverage **without** Quint analogue: negotiation, retention remint/error, IF
 ### To tighten model ↔ impl alignment
 
 1. ~~**`presentSupersededAndMutate` action**~~ — **done** (`presentSupersededAndMutate` + `supersededMutateAndRotateTest`)
-2. **`establishNone` / `rejectMissing`** — model `onMissingHandle` policies matching `execution.ts:97–98` and `presentation-resolver.ts:69–70`.
-3. **`inactive` step** — no-op server path when extension not advertised.
-4. **`forkBlockedByExpiry`** — assert expired presentation cannot reach fork (exchange only).
+2. ~~**`establishNone` / `rejectMissing`**~~ — **done** (`serveUnbound`, `rejectMissingHandle`)
+3. ~~**`inactive` step**~~ — **done** (`inactiveServe`, `rejectPresentedWithoutCapability`)
+4. **`forkBlockedByExpiry`** — assert expired presentation cannot reach fork (exchange only); covered by `exchangeDoesNotServeTest` comment + presentation order in impl.
 
 ### Implementation notes (model informed review)
 

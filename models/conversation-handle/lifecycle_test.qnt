@@ -128,6 +128,13 @@ module policy_inactive_tests {
       .expect(conversations.keys().size() == 0)
       .expect(not(outcomeMinted(lastOutcome)))
   }
+
+  // Handle presented without client capability advertisement → Rejected.
+  run rejectPresentedWithoutCapabilityTest = {
+    init
+      .then(rejectPresentedWithoutCapability)
+      .expect(outcomeIsRejected(lastOutcome))
+  }
 }
 
 // =============================================================================
@@ -151,5 +158,14 @@ module client_tests {
       .then(acceptResponse)
       .then(rejectCrossConversation)
       .expect(not(witnessedAccept))
+  }
+
+  // clear() bumps session generation; accept still succeeds on a fresh epoch.
+  run clearThenAcceptTest = {
+    init
+      .then(acceptResponse)
+      .then(clearSession)
+      .then(acceptResponse)
+      .expect(witnessedAccept)
   }
 }

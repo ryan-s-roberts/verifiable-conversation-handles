@@ -34,6 +34,10 @@ export class ConversationHandleClient {
   private readonly conversations = new Map<string, ConversationSession>();
   private readonly sessionConversationIds = new Map<string, string>();
   private readonly unboundSessions = new Map<string, ConversationSession>();
+  /** Per sessionKey generation — incremented on `clear()` to drop in-flight accepts. */
+  private readonly sessionGenerations = new Map<string, number>();
+  /** Active session keys per conversationId (ref count for shared conversation state). */
+  private readonly conversationRefCount = new Map<string, number>();
   private readonly maxHandleBytes?: number;
 
   constructor(settings?: ClientExtensionSettings) {
@@ -55,6 +59,8 @@ export class ConversationHandleClient {
    * fork responses must therefore be accepted under a distinct child session key.
    */
   acceptResponseMeta(meta: unknown, sessionKey = 'default'): void {
+    const acceptEpoch = this.sessionGenerations.get(sessionKey) ?? 0;
+
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       return;
     }
@@ -92,6 +98,9 @@ export class ConversationHandleClient {
     if (seq === session.highestSeq && session.handle !== undefined && session.handle !== handle) {
       return;
     }
+    if ((this.sessionGenerations.get(sessionKey) ?? 0) !== acceptEpoch) {
+      return;
+    }
 
     session.highestSeq = seq;
     session.handle = handle;
@@ -125,15 +134,14 @@ export class ConversationHandleClient {
   }
 
   clear(sessionKey = 'default'): void {
+    this.sessionGenerations.set(sessionKey, (this.sessionGenerations.get(sessionKey) ?? 0) + 1);
     this.unboundSessions.delete(sessionKey);
     const conversationId = this.sessionConversationIds.get(sessionKey);
     if (conversationId === undefined) {
       return;
     }
     this.sessionConversationIds.delete(sessionKey);
-    if (![...this.sessionConversationIds.values()].includes(conversationId)) {
-      this.conversations.delete(conversationId);
-    }
+    this.decrementConversationRef(conversationId);
   }
 
   private getOrCreateSession(sessionKey: string): ConversationSession {
@@ -151,14 +159,40 @@ export class ConversationHandleClient {
   }
 
   private bindSession(sessionKey: string, conversationId: string): ConversationSession {
+    const previousConversationId = this.sessionConversationIds.get(sessionKey);
+    if (previousConversationId === conversationId) {
+      return this.conversations.get(conversationId)!;
+    }
+
+    if (previousConversationId !== undefined) {
+      this.sessionConversationIds.delete(sessionKey);
+      this.decrementConversationRef(previousConversationId);
+    }
+
     let session = this.conversations.get(conversationId);
     if (!session) {
       session = this.unboundSessions.get(sessionKey) ?? { highestSeq: 0 };
       session.conversationId = conversationId;
       this.conversations.set(conversationId, session);
     }
+
     this.unboundSessions.delete(sessionKey);
     this.sessionConversationIds.set(sessionKey, conversationId);
+    this.incrementConversationRef(conversationId);
     return session;
+  }
+
+  private incrementConversationRef(conversationId: string): void {
+    this.conversationRefCount.set(conversationId, (this.conversationRefCount.get(conversationId) ?? 0) + 1);
+  }
+
+  private decrementConversationRef(conversationId: string): void {
+    const next = (this.conversationRefCount.get(conversationId) ?? 0) - 1;
+    if (next <= 0) {
+      this.conversationRefCount.delete(conversationId);
+      this.conversations.delete(conversationId);
+    } else {
+      this.conversationRefCount.set(conversationId, next);
+    }
   }
 }

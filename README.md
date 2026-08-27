@@ -54,10 +54,36 @@ Expired-handle exchange mints fresh `_meta` only; the presenting tool handler is
 
 ## Client concurrency (§4.2)
 
-Parallel in-flight tool calls may send the same handle. Within an issuer-scoped client, sequence state
-is keyed by `conversationId`: only a higher-sequence handle for the same conversation replaces the
-stored handle. Accept a fork response under a new session key so the child does not replace its
-parent. Read-only server responses do not rotate the handle unless state changes or expiry policy
-applies.
+Parallel in-flight tool calls may send the same handle. Within an issuer-scoped
+`ConversationHandleClient`, sequence state is keyed by `conversationId`: only a
+higher-sequence handle for the **same** conversation replaces the stored handle.
+
+### Session keys (`sessionKey`)
+
+The client API accepts an optional `sessionKey` on `acceptResponseMeta`,
+`buildRequestMeta`, `getHandle`, `getSession`, and `clear`. Keys are **library-local
+routing labels**, not wire fields. Each key is pinned to the first `conversationId`
+it accepts; a response for a different `conversationId` on that key is ignored.
+
+Use separate session keys when tracking multiple conversations on one MCP client
+instance — especially **fork** (§4.5):
+
+```typescript
+// Parent conversation on the default key
+await tool(client, handleClient, { fork: false });
+const forked = await client.callTool({
+  name: 'memory_read',
+  arguments: {},
+  _meta: handleClient.buildRequestMeta('default', { fork: true }),
+});
+// Accept the child under a distinct key so the parent handle is preserved
+handleClient.acceptResponseMeta(forked._meta, 'fork');
+```
+
+`clear(sessionKey)` drops that key's binding and bumps a generation counter so
+late in-flight responses cannot re-bind after an intentional reset.
+
+Read-only server responses do not rotate the handle unless state changes or expiry
+policy applies.
 
 Only the **Specification** section of [conversation-identity-sep-draft.md](./conversation-identity-sep-draft.md) is tested. This is an opt-in extension on MCP 2026-07-28; non-participating peers are unaffected.

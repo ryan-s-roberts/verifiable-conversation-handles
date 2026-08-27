@@ -549,11 +549,23 @@ module lifecycle {
     lastOutcome' = Ok({ superseded: false, minted: false }),
   }
 
+  // §5.1 / §8: handle in _meta without client extension advertisement → Rejected.
+  action rejectPresentedWithoutCapability: bool = all {
+    not(EXTENSION_ADVERTISED),
+    now' = now,
+    nextCid' = nextCid,
+    conversations' = conversations,
+    retiredCids' = retiredCids,
+    issuedSeqs' = issuedSeqs,
+    lastOutcome' = Rejected,
+  }
+
   action step: bool = any {
     establish,
     serveUnbound,
     rejectMissingHandle,
     inactiveServe,
+    rejectPresentedWithoutCapability,
     mutateAndRotate,
     serveWithoutRotation,
     presentSupersededHandle,
@@ -600,6 +612,7 @@ module client {
 
   var conversations: ConversationId -> ConversationState
   var sessionBindings: SessionKey -> ConversationId
+  var sessionGenerations: SessionKey -> int
   var lastAccepted: bool
 
   pure def emptyState: ConversationState = { highestSeq: 0, handleId: 0 }
@@ -629,11 +642,19 @@ module client {
   val clientMonotonic: bool =
     conversations.keys().forall(cid => conversations.get(cid).highestSeq >= 0)
 
+  pure def generationOf(generations: SessionKey -> int, sessionKey: SessionKey): int =
+    if (generations.keys().contains(sessionKey)) {
+      generations.get(sessionKey)
+    } else {
+      0
+    }
+
   val witnessedAccept: bool = lastAccepted
 
   action init: bool = all {
     conversations' = Map(),
     sessionBindings' = Map(),
+    sessionGenerations' = Map(),
     lastAccepted' = false,
   }
 
@@ -642,6 +663,7 @@ module client {
     nondet conversationId = CONVERSATION_IDS.oneOf()
     nondet seq = 0.to(MAX_SEQ).oneOf()
     nondet handleId = 0.to(9).oneOf()
+    val epoch = generationOf(sessionGenerations, sessionKey)
     val state =
       if (conversations.keys().contains(conversationId)) {
         conversations.get(conversationId)
@@ -651,8 +673,10 @@ module client {
     all {
       sessionAllowsCid(sessionBindings, sessionKey, conversationId),
       canAccept(state, seq, handleId),
+      epoch == generationOf(sessionGenerations, sessionKey),
       conversations' = conversations.put(conversationId, applyAccept(state, seq, handleId)),
       sessionBindings' = sessionBindings.put(sessionKey, conversationId),
+      sessionGenerations' = sessionGenerations,
       lastAccepted' = true,
     }
   }
@@ -672,6 +696,7 @@ module client {
       seq < state.highestSeq,
       conversations' = conversations,
       sessionBindings' = sessionBindings,
+      sessionGenerations' = sessionGenerations,
       lastAccepted' = false,
     }
   }
@@ -684,6 +709,20 @@ module client {
       sessionBindings.get(sessionKey) != conversationId,
       conversations' = conversations,
       sessionBindings' = sessionBindings,
+      sessionGenerations' = sessionGenerations,
+      lastAccepted' = false,
+    }
+  }
+
+  // Mirrors ConversationHandleClient.clear(): bump generation so stale accepts are ignored.
+  action clearSession: bool = {
+    nondet sessionKey = SESSION_KEYS.oneOf()
+    val gen = generationOf(sessionGenerations, sessionKey)
+    all {
+      sessionBindings.keys().contains(sessionKey),
+      sessionGenerations' = sessionGenerations.put(sessionKey, gen + 1),
+      conversations' = conversations,
+      sessionBindings' = sessionBindings,
       lastAccepted' = false,
     }
   }
@@ -692,6 +731,7 @@ module client {
     acceptResponse,
     rejectStale,
     rejectCrossConversation,
+    clearSession,
   }
 }
 

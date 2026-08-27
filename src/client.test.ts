@@ -195,4 +195,25 @@ describe('ConversationHandleClient concurrency', () => {
     expect(caps?.extensions?.[EXTENSION_ID]).toMatchObject({ maxHandleBytes: 512 });
     expect((meta[EXTENSION_ID] as { handle: string }).handle).toBe('opaque');
   });
+
+  /** Fresh accept after clear succeeds on the bumped generation. */
+  it('allows accept after clear on the same session key', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(3, 'before-clear'));
+    client.clear();
+    client.acceptResponseMeta(handleMeta(1, 'after-clear', 'cid-new'));
+    expect(client.getHandle()).toBe('after-clear');
+    expect(client.getSession().highestSeq).toBe(1);
+  });
+
+  /** Aliased session keys share conversation state; clear on one key does not clear the other. */
+  it('clear on one alias leaves sibling alias bound to the same conversation', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(4, 'h4', 'cid-a'), 'primary');
+    client.acceptResponseMeta(handleMeta(4, 'h4', 'cid-a'), 'alias');
+    client.clear('primary');
+    expect(client.getHandle('primary')).toBeUndefined();
+    expect(client.getHandle('alias')).toBe('h4');
+    expect(client.getSession('alias').highestSeq).toBe(4);
+  });
 });

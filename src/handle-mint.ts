@@ -16,9 +16,10 @@ export function mintResponseMeta(
   for (let attempt = 0; attempt < MAX_MINT_CAS_RETRIES; attempt++) {
     const current = ctx.store.get(record.cid) ?? record;
     const nextSeq = current.latestSeq + 1;
+    const expiresAt = ctx.nowSec() + ctx.settings.handleLifetimeSeconds!;
     const mintInput: Parameters<typeof encodeHandle>[1] = {
       cid: current.cid,
-      exp: ctx.nowSec() + ctx.settings.handleLifetimeSeconds!,
+      exp: expiresAt,
       seq: nextSeq,
       keyId: ctx.activeKeyId,
     };
@@ -33,7 +34,7 @@ export function mintResponseMeta(
           handle,
           conversationId: cidToConversationId(current.cid),
           seq: nextSeq,
-          expiresAt: ctx.nowSec() + ctx.settings.handleLifetimeSeconds!,
+          expiresAt,
           supersededHandlePresented: superseded,
         },
       };

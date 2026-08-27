@@ -1,5 +1,5 @@
 import type { ServerContext } from '@modelcontextprotocol/server';
-import { conversationHandleToolError } from './errors.js';
+import { ConversationHandleError, conversationHandleToolError } from './errors.js';
 import {
   buildExecutionPlan,
   executePlan,
@@ -80,7 +80,14 @@ export function conversationHandlePlugin(options: ConversationHandlePluginOption
     if (!built.ok) {
       return built.result;
     }
-    return executePlan(ctx, built.plan, handler, sanitizeToolArgs(args));
+    try {
+      return await executePlan(ctx, built.plan, handler, sanitizeToolArgs(args));
+    } catch (error) {
+      if (error instanceof ConversationHandleError) {
+        return error.toCallToolErrorResult();
+      }
+      throw error;
+    }
   }
 
   function purgeExpiredConversations(): number {
