@@ -30,6 +30,7 @@ pnpm run example:server
 | `src/client.ts` | Opaque per-conversation handle persistence with seq-aware concurrent merge |
 | `examples/reference-server/` | Streamable HTTP fixture (shared manager lifetime) |
 | `conformance/` | SEP-0000 e2e scenarios + `sep-0000.yaml` traceability |
+| `models/conversation-handle/` | Quint spec of §4 lifecycle + client seq merge — see [`README`](models/conversation-handle/README.md) for spec traceability |
 | `conformance/ifc-e2e.test.ts` | Information-flow use case: taint journal keyed on `cid`, egress blocked after PII |
 
 ## Extension identifier

@@ -25,6 +25,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "quint:typecheck": "quint typecheck models/conversation-handle/lifecycle.qnt",
+    "quint:test": "quint test models/conversation-handle/lifecycle_test.qnt --main=lifecycle_tests && quint test models/conversation-handle/lifecycle_test.qnt --main=client_tests",
+    "quint:run": "quint run models/conversation-handle/lifecycle.qnt --main=lifecycle_small --invariant='seqStrictlyIncreasesPerCid and latestSeqMatchesMaxIssued and nextCidNotRetired and parentLinksValid' --max-steps=25 --n-traces=200",
     "example:server": "tsx examples/reference-server/server.ts"
   },
   "dependencies": {
