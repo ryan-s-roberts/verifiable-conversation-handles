@@ -27,17 +27,41 @@ describe('conversation-handle e2e fork and lists', () => {
     const harness = await startTestHarness();
     try {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const parent = await callMemoryAppend(client, handleClient, 'parent-data');
+        await callMemoryAppend(client, handleClient, 'parent-data');
+        const parent = await callMemoryAppend(client, handleClient, 'parent-data-2');
         const parentId = (parent.handleMeta as { conversationId: string }).conversationId;
+        const parentHandle = handleClient.getHandle()!;
+        expect((parent.handleMeta as { seq: number }).seq).toBeGreaterThan(1);
         const forked = await client.callTool({
           name: 'memory_read',
           arguments: {},
           _meta: handleClient.buildRequestMeta('default', { fork: true }),
         });
-        handleClient.acceptResponseMeta((forked as { _meta?: Record<string, unknown> })._meta);
-        const forkId = (metaFromResult(forked) as { conversationId: string }).conversationId;
+        handleClient.acceptResponseMeta(
+          (forked as { _meta?: Record<string, unknown> })._meta,
+          'fork',
+        );
+        const forkMeta = metaFromResult(forked) as {
+          conversationId: string;
+          handle: string;
+          seq: number;
+        };
+        const forkId = forkMeta.conversationId;
         expect(forkId).not.toBe(parentId);
+        expect(forkMeta.seq).toBe(1);
         expect(textFromResult(forked)).toBe('[]');
+        expect(handleClient.getSession()).toMatchObject({
+          conversationId: parentId,
+          handle: parentHandle,
+        });
+        expect(handleClient.getSession('fork')).toMatchObject({
+          conversationId: forkId,
+          handle: forkMeta.handle,
+          highestSeq: 1,
+        });
+
+        const parentRead = await callMemoryRead(client, handleClient);
+        expect(textFromResult(parentRead.result)).toBe('["parent-data","parent-data-2"]');
       });
     } finally {
       await harness.close();

@@ -27,10 +27,13 @@ export function parseAdvisorySeq(seq: unknown): number | undefined {
 
 /**
  * Opaque client-side handle persistence with seq-aware merge for concurrent responses.
+ * Each instance is scoped to one issuing server; state within it is keyed by `conversationId`.
  * Clients MUST send the highest-seq handle (§4.2) and SHOULD discard lower-seq replacements.
  */
 export class ConversationHandleClient {
-  private readonly sessions = new Map<string, ConversationSession>();
+  private readonly conversations = new Map<string, ConversationSession>();
+  private readonly sessionConversationIds = new Map<string, string>();
+  private readonly unboundSessions = new Map<string, ConversationSession>();
   private readonly maxHandleBytes?: number;
 
   constructor(settings?: ClientExtensionSettings) {
@@ -47,8 +50,9 @@ export class ConversationHandleClient {
   }
 
   /**
-   * Stores the server-issued handle when its advisory `seq` is not lower than the stored highest.
-   * Out-of-order concurrent responses therefore cannot regress the client's handle.
+   * Stores the server-issued handle when its advisory `seq` is not lower than the stored highest
+   * for the same conversation. A logical session is pinned to the first `conversationId` it accepts;
+   * fork responses must therefore be accepted under a distinct child session key.
    */
   acceptResponseMeta(meta: unknown, sessionKey = 'default'): void {
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
@@ -71,17 +75,26 @@ export class ConversationHandleClient {
     if (seq === undefined) {
       return;
     }
+    const conversationId = response.conversationId;
+    if (typeof conversationId !== 'string' || conversationId.length === 0) {
+      return;
+    }
 
-    const session = this.getOrCreateSession(sessionKey);
+    const boundConversationId = this.sessionConversationIds.get(sessionKey);
+    if (boundConversationId !== undefined && boundConversationId !== conversationId) {
+      return;
+    }
+
+    const session = this.bindSession(sessionKey, conversationId);
     if (seq < session.highestSeq) {
+      return;
+    }
+    if (seq === session.highestSeq && session.handle !== undefined && session.handle !== handle) {
       return;
     }
 
     session.highestSeq = seq;
     session.handle = handle;
-    if (typeof response.conversationId === 'string') {
-      session.conversationId = response.conversationId;
-    }
   }
 
   /**
@@ -112,7 +125,15 @@ export class ConversationHandleClient {
   }
 
   clear(sessionKey = 'default'): void {
-    this.sessions.delete(sessionKey);
+    this.unboundSessions.delete(sessionKey);
+    const conversationId = this.sessionConversationIds.get(sessionKey);
+    if (conversationId === undefined) {
+      return;
+    }
+    this.sessionConversationIds.delete(sessionKey);
+    if (![...this.sessionConversationIds.values()].includes(conversationId)) {
+      this.conversations.delete(conversationId);
+    }
   }
 
   /** Test-only injection of session state without parsing the handle. */
@@ -120,15 +141,21 @@ export class ConversationHandleClient {
     session: { handle?: string; highestSeq?: number; conversationId?: string },
     sessionKey = 'default',
   ): void {
-    const target = this.getOrCreateSession(sessionKey);
+    let target: ConversationSession;
+    if (session.conversationId !== undefined) {
+      const currentConversationId = this.sessionConversationIds.get(sessionKey);
+      if (currentConversationId !== undefined && currentConversationId !== session.conversationId) {
+        this.clear(sessionKey);
+      }
+      target = this.bindSession(sessionKey, session.conversationId);
+    } else {
+      target = this.getOrCreateSession(sessionKey);
+    }
     if (session.handle !== undefined) {
       target.handle = session.handle;
     }
     if (session.highestSeq !== undefined) {
       target.highestSeq = session.highestSeq;
-    }
-    if (session.conversationId !== undefined) {
-      target.conversationId = session.conversationId;
     }
   }
 
@@ -138,11 +165,28 @@ export class ConversationHandleClient {
   }
 
   private getOrCreateSession(sessionKey: string): ConversationSession {
-    let session = this.sessions.get(sessionKey);
+    const conversationId = this.sessionConversationIds.get(sessionKey);
+    if (conversationId !== undefined) {
+      return this.conversations.get(conversationId)!;
+    }
+
+    let session = this.unboundSessions.get(sessionKey);
     if (!session) {
       session = { highestSeq: 0 };
-      this.sessions.set(sessionKey, session);
+      this.unboundSessions.set(sessionKey, session);
     }
+    return session;
+  }
+
+  private bindSession(sessionKey: string, conversationId: string): ConversationSession {
+    let session = this.conversations.get(conversationId);
+    if (!session) {
+      session = this.unboundSessions.get(sessionKey) ?? { highestSeq: 0 };
+      session.conversationId = conversationId;
+      this.conversations.set(conversationId, session);
+    }
+    this.unboundSessions.delete(sessionKey);
+    this.sessionConversationIds.set(sessionKey, conversationId);
     return session;
   }
 }

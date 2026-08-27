@@ -3,11 +3,11 @@ import { ConversationHandleClient } from './client.js';
 import { EXTENSION_ID } from './schema/draft/schema.js';
 import { CLIENT_CAPABILITIES_META_KEY } from './meta-keys.js';
 
-function handleMeta(seq: number, handle = `handle-seq-${seq}`) {
+function handleMeta(seq: number, handle = `handle-seq-${seq}`, conversationId = 'abc123') {
   return {
     [EXTENSION_ID]: {
       handle,
-      conversationId: 'abc123',
+      conversationId,
       seq,
       expiresAt: 4_000_000_000,
       supersededHandlePresented: false,
@@ -48,12 +48,54 @@ describe('ConversationHandleClient concurrency', () => {
     expect(client.getSession().highestSeq).toBe(0);
   });
 
-  it('sep-0000-client-discards-lower-seq: equal seq overwrites handle string', () => {
+  it('rejects a different handle carrying the same conversation sequence', () => {
     const client = new ConversationHandleClient();
     client.acceptResponseMeta(handleMeta(5, 'first-at-five'));
     client.acceptResponseMeta(handleMeta(5, 'second-at-five'));
-    expect(client.getHandle()).toBe('second-at-five');
+    expect(client.getHandle()).toBe('first-at-five');
     expect(client.getSession().highestSeq).toBe(5);
+  });
+
+  it('does not compare or replace handles across conversations', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(2, 'conversation-a', 'cid-a'));
+    client.acceptResponseMeta(handleMeta(99, 'conversation-b', 'cid-b'));
+
+    expect(client.getSession()).toMatchObject({
+      handle: 'conversation-a',
+      highestSeq: 2,
+      conversationId: 'cid-a',
+    });
+  });
+
+  it('shares highest sequence state for aliases of the same conversation', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(4, 'h4', 'cid-a'), 'primary');
+    client.acceptResponseMeta(handleMeta(2, 'h2', 'cid-a'), 'alias');
+
+    expect(client.getHandle('primary')).toBe('h4');
+    expect(client.getHandle('alias')).toBe('h4');
+    expect(client.getSession('alias').highestSeq).toBe(4);
+  });
+
+  it('keeps a higher-sequence parent when a fork is accepted into a child session', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta(handleMeta(2, 'parent-h2', 'parent-cid'), 'parent');
+    const fork = handleMeta(1, 'child-h1', 'child-cid');
+
+    client.acceptResponseMeta(fork, 'parent');
+    client.acceptResponseMeta(fork, 'child');
+
+    expect(client.getSession('parent')).toMatchObject({
+      handle: 'parent-h2',
+      highestSeq: 2,
+      conversationId: 'parent-cid',
+    });
+    expect(client.getSession('child')).toMatchObject({
+      handle: 'child-h1',
+      highestSeq: 1,
+      conversationId: 'child-cid',
+    });
   });
 
   it('ignores meta without handle field', () => {
@@ -69,6 +111,20 @@ describe('ConversationHandleClient concurrency', () => {
     });
     expect(client.getHandle()).toBe('h3');
     expect(client.getSession().highestSeq).toBe(3);
+  });
+
+  it('ignores meta without a conversation id', () => {
+    const client = new ConversationHandleClient();
+    client.acceptResponseMeta({
+      [EXTENSION_ID]: {
+        handle: 'unscoped-handle',
+        seq: 1,
+        expiresAt: 4_000_000_000,
+        supersededHandlePresented: false,
+      },
+    });
+
+    expect(client.getHandle()).toBeUndefined();
   });
 
   it('ignores invalid or missing seq in response meta', () => {
