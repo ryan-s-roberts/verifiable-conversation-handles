@@ -21,7 +21,14 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: capability negotiation (§5.1, §7).
+ *
+ * Exercises server `initialize`/`discover` advertisement of extension settings through the
+ * memory fixture HTTP harness. Check ids in test names map to `conformance/sep-0000.yaml`.
+ */
 describe('conversation-handle e2e negotiation', () => {
+  /** §7: server advertises extension id, handle lifetime, on-missing policy, and retention. */
   it('sep-0000-server-advertises-extension + sep-0000-advertise-retention: server/discover advertises extension settings', async () => {
     const harness = await startTestHarness();
     try {
@@ -37,6 +44,7 @@ describe('conversation-handle e2e negotiation', () => {
     }
   });
 
+  /** §7: `onMissingHandle` and `handleLifetimeSeconds` reflect server configuration. */
   it('sep-0000-advertise-handle-lifetime + sep-0000-advertise-on-missing-handle: settings visible on discover', async () => {
     const harness = await startTestHarness({ onMissingHandle: 'none' });
     try {

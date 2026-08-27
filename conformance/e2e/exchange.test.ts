@@ -22,8 +22,18 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: expired-handle exchange and cid stability (§4.4, §2.2).
+ *
+ * Exchange path renews expiry without changing cid; expired handles cannot present state;
+ * `conversationId` is the hex encoding of the 128-bit cid.
+ */
 describe('conversation-handle e2e exchange', () => {
 
+  /**
+   * §4.4: authentic expired handle on exchange resumes the same `conversationId` and returns
+   * a fresh handle without leaking prior tool output in the exchange response body.
+   */
   it('sep-0000-exchange-expired-handle + sep-0000-handle-determines-expiry: expired authentic handle resumes same cid', async () => {
     let now = 1_000_000;
     const harness = await startTestHarness({ now: () => now });
@@ -53,6 +63,7 @@ describe('conversation-handle e2e exchange', () => {
     }
   });
 
+  /** §4.4: expired handle presented as current (non-exchange) does not return protected state. */
   it('sep-0000-expired-handle-not-sufficient + sep-0000-reject-inauthentic-or-expired: expired handle not valid for presenting request', async () => {
     let now = 1_000_000;
     const harness = await startTestHarness({ now: () => now });
@@ -77,6 +88,7 @@ describe('conversation-handle e2e exchange', () => {
     }
   });
 
+  /** §2.2: `conversationId` is lowercase hex of the 128-bit cid (32 characters). */
   it('sep-0000-cid-stable-across-handles: conversationId is 32 hex chars from 128-bit cid', async () => {
     const harness = await startTestHarness();
     try {

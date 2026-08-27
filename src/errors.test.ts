@@ -1,3 +1,8 @@
+/**
+ * Unit tests for normative error surface (SEP draft §8).
+ *
+ * Asserts JSON-RPC and CallTool error envelopes, reason codes, and client parse round-trips.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   ConversationHandleError,
@@ -12,6 +17,7 @@ import {
 } from './schema/draft/schema.js';
 
 describe('§8 error surface', () => {
+  /** §8: `ConversationHandleError.toJsonRpcError` emits the normative code, message, and remediation. */
   it('toJsonRpcError matches normative §8 shape', () => {
     const err = new ConversationHandleError('handle_invalid', 'handle integrity check failed');
     expect(err.toJsonRpcError(7)).toEqual({
@@ -30,6 +36,7 @@ describe('§8 error surface', () => {
     });
   });
 
+  /** §8: tool errors mirror JSON-RPC fields under `_meta[extension]`. */
   it('toCallToolErrorResult mirrors toJsonRpcError error fields in _meta', () => {
     const err = new ConversationHandleError('principal_mismatch', 'presented handle is not owned');
     const rpc = err.toJsonRpcError(1);
@@ -44,6 +51,7 @@ describe('§8 error surface', () => {
     });
   });
 
+  /** §8: `conversationHandleToolError` / `parseCallToolHandleError` round-trip reason and code. */
   it('conversationHandleToolError and parseCallToolHandleError round-trip', () => {
     const tool = conversationHandleToolError('handle_too_large', 'handle exceeds maxHandleBytes');
     const parsed = parseCallToolHandleError(tool);
@@ -52,6 +60,7 @@ describe('§8 error surface', () => {
     expect(parsed?.message).toBe('Conversation handle not recognised');
   });
 
+  /** §5.1: missing client capability advertisement uses `MissingRequiredClientCapabilityError`. */
   it('missingClientCapability uses MissingRequiredClientCapabilityError code', () => {
     const err = ConversationHandleError.missingClientCapability();
     expect(err.toJsonRpcError().error.code).toBe(MISSING_REQUIRED_CLIENT_CAPABILITY);

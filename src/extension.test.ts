@@ -1,3 +1,9 @@
+/**
+ * Unit tests for the conversation-handle extension plugin (SEP draft §4.2 rotation).
+ *
+ * Complements e2e coverage by exercising internal ordering invariants that are hard to observe
+ * over HTTP alone. Check ids in test names map to `conformance/sep-0000.yaml` where present.
+ */
 import type { ServerContext } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as codec from './codec.js';
@@ -38,6 +44,11 @@ describe('mint ordering', () => {
     vi.restoreAllMocks();
   });
 
+  /**
+   * §4.2 (seq strictly increases): `latestSeq` must not advance when minting fails after the
+   * handler mutates state. A failed encode must leave the store at the prior seq so retries
+   * do not skip sequence numbers or strand clients on an unissued handle.
+   */
   it('does not advance latestSeq when encodeHandle throws after a successful mint', async () => {
     const manager = conversationHandlePlugin({
       keys: TEST_KEYS,

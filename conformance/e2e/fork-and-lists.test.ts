@@ -21,8 +21,14 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: fork and protocol invariants (§4.5, §7).
+ *
+ * Fork mints a fresh cid; tools/list is handle-independent; server may decline to mint handles.
+ */
 describe('conversation-handle e2e fork and lists', () => {
 
+  /** §4.5: `fork: true` mints a new conversation with empty state, not a copy of parent memory. */
   it('sep-0000-fork-mints-fresh-cid: fork mints new conversation without shared memory', async () => {
     const harness = await startTestHarness();
     try {
@@ -44,6 +50,7 @@ describe('conversation-handle e2e fork and lists', () => {
     }
   });
 
+  /** §7: handle presence must not change the tools/list catalogue. */
   it('sep-0000-lists-invariant-across-conversations: tools/list unchanged by handle presence', async () => {
     const harness = await startTestHarness();
     try {
@@ -66,6 +73,7 @@ describe('conversation-handle e2e fork and lists', () => {
     }
   });
 
+  /** §4.1: when `onMissingHandle` is `none`, responses omit handle meta entirely. */
   it('sep-0000-mint-or-decline-per-setting: no handle when configured to none', async () => {
     const harness = await startTestHarness({ onMissingHandle: 'none' });
     try {

@@ -21,8 +21,18 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: client concurrency (§5.2).
+ *
+ * Out-of-order response acceptance, parallel in-flight requests, and stale-handle convergence
+ * through the HTTP harness with `ConversationHandleClient`.
+ */
 describe('conversation-handle e2e client concurrency', () => {
 
+  /**
+   * §5.2: after out-of-order accepts, the client sends the highest-seq handle on the next
+   * request and the server honours the current conversation state.
+   */
   it('sep-0000-client-sends-highest-seq: out-of-order accept keeps highest seq for next request', async () => {
     const harness = await startTestHarness();
     try {
@@ -47,6 +57,7 @@ describe('conversation-handle e2e client concurrency', () => {
     }
   });
 
+  /** §5.2: accepting a lower seq after a higher one must not regress stored handle or seq. */
   it('sep-0000-client-discards-lower-seq: lower seq accept does not regress stored handle', async () => {
     const harness = await startTestHarness();
     try {
@@ -79,6 +90,10 @@ describe('conversation-handle e2e client concurrency', () => {
     }
   });
 
+  /**
+   * §5.2: parallel appends with the same presented handle all succeed; client ends on
+   * `max(seq)` across responses.
+   */
   it('sep-0000-client-concurrency-parallel: parallel appends complete and client tracks highest seq', async () => {
     const harness = await startTestHarness();
     try {
@@ -114,6 +129,10 @@ describe('conversation-handle e2e client concurrency', () => {
     }
   });
 
+  /**
+   * §5.2: an in-flight request carrying a stale handle still mutates state; when the newer
+   * response arrives the client converges on the highest seq.
+   */
   it('sep-0000-client-concurrency-interleaved: stale in-flight handle converges after newer seq accepted', async () => {
     const harness = await startTestHarness();
     try {

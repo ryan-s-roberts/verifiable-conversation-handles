@@ -22,8 +22,15 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: security and binding (§2.1, §5.1, §6).
+ *
+ * Opaque handle storage, forgery rejection, principal isolation, handle ≠ authorization,
+ * argument/meta binding rules, and advisory mirror rejection.
+ */
 describe('conversation-handle e2e security', () => {
 
+  /** §5.1: client stores the handle JSON string verbatim from response meta. */
   it('sep-0000-handle-is-json-string + sep-0000-client-returns-handle-verbatim: client stores handle verbatim only', async () => {
     const harness = await startTestHarness();
     try {
@@ -38,6 +45,7 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /** §6: single-byte tamper fails integrity verification with actionable error. */
   it('sep-0000-reject-forged-handle: tampered handle fails integrity verification', async () => {
     const harness = await startTestHarness();
     try {
@@ -55,6 +63,7 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /** §2.1: conversation state is bound to the authenticated principal, not the handle alone. */
   it('sep-0000-no-cross-principal-conversation-state: bob cannot read alice memory', async () => {
     const harness = await startTestHarness();
     try {
@@ -76,6 +85,10 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /**
+   * §2.1: a valid handle does not substitute for bearer authentication — unauthenticated
+   * callers cannot access conversation state even with a stolen handle.
+   */
   it('sep-0000-handle-not-authorization + sep-0000-state-commitment-not-authorization: valid handle without bearer yields no state', async () => {
     const harness = await startTestHarness();
     try {
@@ -96,6 +109,7 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /** §5.1: handle in tool arguments is ignored — only `_meta` binding resolves conversation. */
   it('sep-0000-reject-handle-in-tool-arguments: handle in tool args does not bind conversation', async () => {
     const harness = await startTestHarness();
     try {
@@ -123,6 +137,7 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /** §4.1: omitting handle starts a fresh conversation — prior memory is not visible. */
   it('sep-0000-invalid-handle-not-resolved + sep-0000-treated-as-no-conversation: omitting handle does not see prior memory', async () => {
     const harness = await startTestHarness();
     try {
@@ -137,6 +152,7 @@ describe('conversation-handle e2e security', () => {
     }
   });
 
+  /** §5.1: advisory `conversationId`/`seq` mirrors without `handle` do not resolve conversation. */
   it('sep-0000-mirrors-not-accepted-as-input: advisory mirrors without handle do not resolve conversation', async () => {
     const harness = await startTestHarness();
     try {

@@ -21,8 +21,15 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: establishment and rotation (§4.1–§4.2).
+ *
+ * First handle mint, seq monotonicity on state change, read-only non-rotation, and near-expiry
+ * SHOULD rotation. Check ids in test names map to `conformance/sep-0000.yaml`.
+ */
 describe('conversation-handle e2e establishment and rotation', () => {
 
+  /** §4.1: no dedicated establish call — first tool response mints seq 1 when configured. */
   it('sep-0000-no-dedicated-establishment-method + sep-0000-mint-or-decline-per-setting: mints handle without prior handle', async () => {
     const harness = await startTestHarness();
     try {
@@ -36,6 +43,10 @@ describe('conversation-handle e2e establishment and rotation', () => {
     }
   });
 
+  /**
+   * §4.2: state-changing responses bump seq strictly; `conversationId` (cid) stays stable
+   * across rotations within the same conversation.
+   */
   it('sep-0000-rotate-on-state-commitment-change + sep-0000-replacement-seq-monotonic + sep-0000-seq-strictly-increases: seq increases on state-changing response', async () => {
     const harness = await startTestHarness();
     try {
@@ -54,6 +65,7 @@ describe('conversation-handle e2e establishment and rotation', () => {
     }
   });
 
+  /** §4.2: read-only calls with ample lifetime do not mint a replacement handle. */
   it('read-only call does not rotate handle when not near expiry', async () => {
     const harness = await startTestHarness();
     try {
@@ -70,6 +82,7 @@ describe('conversation-handle e2e establishment and rotation', () => {
     }
   });
 
+  /** §4.2 (SHOULD): when remaining lifetime falls below half, server rotates on read-only call. */
   it('sep-0000-rotate-near-expiry: SHOULD rotate when remaining lifetime under half', async () => {
     let now = 1_000_000;
     const harness = await startTestHarness({

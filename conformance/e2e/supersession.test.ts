@@ -22,8 +22,15 @@ import {
 } from '../harness.js';
 import { OTHER_SERVER_KEYS } from './shared.js';
 
+/**
+ * SEP-0000 e2e: superseded-handle presentation (§4.3).
+ *
+ * Stale but authentic handles must succeed, set `supersededHandlePresented`, and observe current
+ * server state — not the commitment embedded in the presented handle.
+ */
 describe('conversation-handle e2e supersession', () => {
 
+  /** §4.3: presenting seq < latest sets `supersededHandlePresented: true` in response meta. */
   it('sep-0000-superseded-flag-set: stale seq sets supersededHandlePresented', async () => {
     const harness = await startTestHarness();
     try {
@@ -47,6 +54,7 @@ describe('conversation-handle e2e supersession', () => {
     }
   });
 
+  /** §4.3: superseded handles are not rejected — request still succeeds. */
   it('sep-0000-supersession-not-rejected: superseded handle still succeeds', async () => {
     const harness = await startTestHarness();
     try {
@@ -69,6 +77,10 @@ describe('conversation-handle e2e supersession', () => {
     }
   });
 
+  /**
+   * §4.3: mutation on a superseded handle applies to current state (memory includes prior
+   * writes), not a fork from the stale commitment.
+   */
   it('sep-0000-superseded-handle-not-assumed-current: stale handle sees current state after rotation', async () => {
     const harness = await startTestHarness();
     try {

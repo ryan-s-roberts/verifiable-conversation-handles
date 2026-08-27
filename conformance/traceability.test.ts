@@ -1,3 +1,9 @@
+/**
+ * Traceability gate: every `sep-0000-*` check in `conformance/sep-0000.yaml` must map to a
+ * vitest `it(...)` name in the traced test files (or be explicitly excluded/conditional).
+ *
+ * Prevents spec requirements from drifting without a corresponding automated check.
+ */
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
