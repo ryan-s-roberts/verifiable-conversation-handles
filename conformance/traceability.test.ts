@@ -23,6 +23,8 @@ const TEST_FILES = [
   'src/client.test.ts',
   'src/codec.test.ts',
   'src/errors.test.ts',
+  'src/tool-meta.test.ts',
+  'conformance/ifc-e2e.test.ts',
   ...readdirSync(join(root, 'conformance/e2e'))
     .filter((name) => name.endsWith('.test.ts'))
     .map((name) => `conformance/e2e/${name}`),

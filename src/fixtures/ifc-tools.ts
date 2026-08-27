@@ -83,6 +83,8 @@ export function ifcFixtureToolDefinitions(
     receive_pii: {
       description: 'Simulated PII source — marks principal and conversation with pii label',
       inputSchema: receivePiiSchema,
+      // preferred: missing handle may mint until principal taint triggers fail-closed policy
+      handleRequirement: 'preferred',
       handler: async () => {
         const active = getActiveConversation();
         if (!active) {
@@ -98,6 +100,7 @@ export function ifcFixtureToolDefinitions(
     egress_post: {
       description: 'Guarded egress sink — blocked when principal or conversation has pii label',
       inputSchema: egressPostSchema,
+      handleRequirement: 'preferred',
       handler: async (args) => {
         const active = getActiveConversation();
         if (!active) {
