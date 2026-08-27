@@ -89,8 +89,8 @@ These exist in `src/` but have **no dedicated Quint action** or invariant.
 |------|----------------|-----------|
 | **Inactive** | `presentation.kind === 'inactive'` when client does not advertise extension (`presentation-resolver.ts:59–60`) | `inactiveServe` action ✓ |
 | **Handle without capability** | Handle in `_meta` but no client extension → `MISSING_REQUIRED_CLIENT_CAPABILITY` | `rejectPresentedWithoutCapability` ✓ |
-| **`onMissingHandle: 'none'`** | `absent` + `mintOnResponse: false` → `unbound`, no mint (`execution.ts:97–98`) | Only `ON_MISSING == "new"` enables `establish` |
-| **`onMissingHandle: 'reject'`** | `presentFailure('handle_missing')` | Not modeled |
+| **`onMissingHandle: 'none'`** | `absent` + `mintOnResponse: false` → `unbound`, no mint (`execution.ts:97–98`) | `serveUnbound` ✓ |
+| **`onMissingHandle: 'reject'`** | `presentFailure('handle_missing')` | `rejectMissingHandle` ✓ |
 | **Unauthenticated establish** | `buildExecutionPlan` fails if no principal on `absent` | `establish` always picks a principal |
 | **Unauthenticated presented handle** | `verifyOwnership` → `unauthenticated` | `resolvePresented` checks principal but no separate unauthenticated action |
 | **Fork on expired handle** | Expiry checked **before** fork (`presentation-resolver.ts:109–113`) → **exchange wins** | `forkConversation` requires valid parent; no expired+fork interaction |
