@@ -16,6 +16,18 @@ export type OnMissingHandle = 'new-conversation' | 'none';
 export type MissingHandlePolicy = OnMissingHandle | 'reject';
 export type HandleProfile = 'symmetric' | 'asymmetric';
 
+/** Per-tool conversation-handle mark on `tools/list` entries (§1.1). */
+export type ToolHandleRequirement = 'required' | 'preferred';
+
+export interface ToolConversationHandleMeta {
+  requirement: ToolHandleRequirement;
+  /**
+   * Whether the server may mint/rotate a handle in this tool's response `_meta`.
+   * If present, MUST match server behaviour. Omit only when the default (`true`) applies.
+   */
+  mayMint?: boolean;
+}
+
 export const DEFAULT_HANDLE_LIFETIME_SECONDS = 3600;
 export const DEFAULT_MAX_HANDLE_BYTES = 1024;
 export const DEFAULT_ON_MISSING_HANDLE: OnMissingHandle = 'new-conversation';

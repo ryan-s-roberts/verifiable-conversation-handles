@@ -57,14 +57,18 @@ describe('conversation-handle e2e fork and lists', () => {
     });
   });
 
-  /** §7: handle presence must not change the tools/list catalogue. */
+  /** §6.4 / §1.1: handle presence must not change tools/list names or marks. */
   it('sep-0000-lists-invariant-across-conversations: tools/list unchanged by handle presence', async () => {
     await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
+        const metaByName = (tools: Array<{ name: string; _meta?: unknown }> | undefined) =>
+          Object.fromEntries((tools ?? []).map((t) => [t.name, t._meta]));
+
         const before = await client.listTools();
         await callMemoryAppend(client, handleClient, 'x');
         const after = await client.listTools({ _meta: handleClient.buildRequestMeta() });
         expect(after.tools?.map((t) => t.name).sort()).toEqual(before.tools?.map((t) => t.name).sort());
+        expect(metaByName(after.tools)).toEqual(metaByName(before.tools));
         handleClient.clear();
         const second = await callMemoryAppend(client, handleClient, 'y');
         const lists = await Promise.all([
@@ -72,6 +76,7 @@ describe('conversation-handle e2e fork and lists', () => {
           client.listTools(),
         ]);
         expect(lists[0].tools?.map((t) => t.name).sort()).toEqual(lists[1].tools?.map((t) => t.name).sort());
+        expect(metaByName(lists[0].tools)).toEqual(metaByName(lists[1].tools));
         expect((second.handleMeta as { conversationId: string }).conversationId).toBeDefined();
       });
     });

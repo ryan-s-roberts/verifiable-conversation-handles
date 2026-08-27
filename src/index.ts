@@ -39,6 +39,12 @@ export { registerConversationTools } from './integrate.js';
 export type { ConversationToolDefinition } from './integrate.js';
 
 export {
+  buildToolHandleMeta,
+  readToolHandleMeta,
+} from './tool-meta.js';
+export type { ToolHandleMetaBag } from './tool-meta.js';
+
+export {
   CID_BYTE_LENGTH,
   DEFAULT_HANDLE_LIFETIME_SECONDS,
   DEFAULT_MAX_HANDLE_BYTES,
@@ -60,4 +66,6 @@ export type {
   MissingHandlePolicy,
   OnMissingHandle,
   ServerExtensionSettings,
+  ToolConversationHandleMeta,
+  ToolHandleRequirement,
 } from './schema/draft/schema.js';

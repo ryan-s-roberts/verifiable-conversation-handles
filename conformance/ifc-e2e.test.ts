@@ -3,6 +3,7 @@ import { decodeHandle } from '../src/codec.js';
 import { decodeLabelHead } from '../src/fixtures/label-head.js';
 import { parseCallToolHandleError } from '../src/errors.js';
 import { setClientSession } from '../src/test-helpers.js';
+import { readToolHandleMeta } from '../src/tool-meta.js';
 import {
   callEgressPost,
   callReceivePii,
@@ -30,6 +31,30 @@ function stateLabelsFromHandle(handle: string): string[] {
  *   - rejects missing handles after principal-level taint (§8 omission-as-maximum-taint policy).
  */
 describe('ifc use-case e2e', () => {
+  /**
+   * §1.1: IFC tools advertise `preferred` — missing handle may mint until principal-level
+   * fail-closed policy engages (post-taint reject). Marking `required` would overclaim.
+   */
+  it('sep-0000-tool-mark-on-list: IFC tools advertise preferred handle marks', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client) => {
+        const listed = await client.listTools();
+        const byName = Object.fromEntries((listed.tools ?? []).map((t) => [t.name, t]));
+        expect(readToolHandleMeta(byName.receive_pii)).toEqual({
+          requirement: 'preferred',
+          mayMint: true,
+        });
+        expect(readToolHandleMeta(byName.egress_post)).toEqual({
+          requirement: 'preferred',
+          mayMint: true,
+        });
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
   /**
    * §3 (state commitment) + §4.2 (rotation on commitment drift) + §4.3 (IFC supersession policy).
    *

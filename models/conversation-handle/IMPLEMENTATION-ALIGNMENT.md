@@ -141,7 +141,7 @@ These exist in `src/` but have **no dedicated Quint action** or invariant.
 | `forgedHandleRejectedTest` | `security.test.ts` tamper cases |
 | `acceptMonotonicSeqTest` | `client.test.ts`, `client-concurrency.test.ts` |
 
-E2e coverage **without** Quint analogue: negotiation, retention remint/error, IFC, concurrent parallel handles, `onMissingHandle: 'none'`.
+E2e coverage **without** Quint analogue: negotiation, §1.1 tool marking, retention remint/error, IFC, concurrent parallel handles, `onMissingHandle: 'none'`.
 
 ---
 

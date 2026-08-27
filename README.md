@@ -28,6 +28,7 @@ pnpm run example:server
 | `src/fixtures/label-head.ts` | Versioned label-journal encoding for §3 state commitment |
 | `src/http-server.ts` | `serveMcp()` / `serveMcpEphemeral()` helpers |
 | `src/client.ts` | Opaque per-conversation handle persistence with seq-aware concurrent merge |
+| `src/tool-meta.ts` | §1.1 `tools/list` mark helpers (`buildToolHandleMeta`, `readToolHandleMeta`) |
 | `examples/reference-server/` | Streamable HTTP fixture (shared manager lifetime) |
 | `conformance/` | SEP-0000 e2e scenarios + `sep-0000.yaml` traceability |
 | `models/conversation-handle/` | Quint spec of §4 lifecycle + client seq merge — see [`README`](models/conversation-handle/README.md) for spec traceability |

@@ -126,13 +126,16 @@ SEP-2567's Future Work section records that it stopped short deliberately:
 > of scope here to keep this SEP to the minimum needed to remove sessions.
 
 This extension is adjacent to that follow-up rather than an instance of it. The Future Work section
-describes *marking*: a schema-level or annotation-level declaration that a given result field is a
-handle, so orchestrators can locate live state for compaction, hand-off, and cleanup. This extension
-defines a *verifiable* handle: one whose authenticity, expiry, and ordering a server can check.
+describes *field marking*: a schema-level or annotation-level declaration that a given result field
+is a model-threaded state handle (`basket_id`), so orchestrators can locate live state for
+compaction, hand-off, and cleanup. This extension defines a *verifiable* conversation handle carried
+in `_meta`, plus **tool marking** (§1.1) so clients can discover which tools consume that `_meta`
+identity.
 
-The two are complementary and independent. Marking makes handles discoverable; verification makes
-them trustworthy. Neither subsumes the other, and a marking proposal would apply to conversation
-handles as readily as to `basket_id`.
+Field marking and conversation-handle tool marking are complementary and independent. Field marking
+makes SEP-2567 tool-argument handles discoverable; tool marking (§1.1) makes conversation-scoped
+tools discoverable; verification makes issued handles trustworthy. This SEP does not specify field
+marking for model-threaded handles.
 
 ### 3. What a handle must satisfy
 
@@ -284,6 +287,58 @@ Servers supporting this extension MUST advertise it in the `server/discover` res
 ```
 
 Settings fields are defined in §7.
+
+#### 1.1 Tool marking
+
+Server-wide advertisement (§1) tells a client that the server supports conversation handles. It does
+not tell the client which tools use conversation-scoped state. Without per-tool discoverability,
+third-party clients cannot know when to attach a handle except by guessing from tool descriptions
+or learning from errors.
+
+Servers that advertise this extension MUST mark each tool that uses conversation-scoped state on the
+corresponding `tools/list` entry under `_meta["io.modelcontextprotocol/conversation-handle"]`. The
+mark is part of the tool definition: it MUST be identical for every caller and MUST NOT vary by
+conversation (§6.4).
+
+```json
+{
+  "name": "memory_append",
+  "description": "Append text to conversation-scoped memory",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "text": { "type": "string" } },
+    "required": ["text"]
+  },
+  "_meta": {
+    "io.modelcontextprotocol/conversation-handle": {
+      "requirement": "preferred",
+      "mayMint": true
+    }
+  }
+}
+```
+
+| Field | Type | Required | Meaning |
+| ----- | ---- | -------- | ------- |
+| `requirement` | `"required" \| "preferred"` | MUST | Whether a participating client MUST or SHOULD attach a handle on `tools/call`. |
+| `mayMint` | boolean | SHOULD | Whether the server may include a replacement or establishment handle in the tool's response `_meta`. Default `true` when omitted on a marked tool. If present, the value MUST match the server's actual mint behaviour for that tool. |
+
+Semantics:
+
+- **`required`.** A client that advertises this extension MUST attach a handle when calling the tool,
+  or expect the server to refuse the operation (§8). Tools that fail closed when no handle is present
+  MUST advertise `requirement: "required"`.
+- **`preferred`.** A participating client SHOULD attach a handle when it has one. The server MAY mint
+  per `onMissingHandle` (§7) when none is presented.
+- **Unmarked tools.** Clients MUST treat an unmarked tool as conversation-agnostic: they MUST NOT
+  infer a handle requirement from the server's extension advertisement alone. Servers MAY still mint
+  a handle on unmarked tools; clients that receive one MAY persist it (§4.2).
+
+Clients supporting this extension SHOULD read tool `_meta` when deciding whether to attach a handle.
+Unknown fields in the mark object MUST be ignored.
+
+This mark declares consumption of conversation identity in request `_meta`. It is not a substitute
+for SEP-2567 field marking of model-threaded handles in tool arguments or results.
 
 ### 2. The conversation handle
 
@@ -621,7 +676,8 @@ it would impose key-distribution costs on every implementer to serve a minority.
 
 Conversation handles MUST NOT influence the results of `tools/list`, `resources/list`, or
 `prompts/list`. Servers MUST NOT vary list results by conversation. This preserves the caching model
-SEP-2567 and SEP-2549 establish.
+SEP-2567 and SEP-2549 establish. Static tool marks under §1.1 are part of the tool definition and
+MUST likewise be conversation-invariant.
 
 ### 7. Extension settings
 
@@ -987,6 +1043,7 @@ example:server` starts a streamable HTTP fixture.
 | Server: verify, detect supersession, exchange | §§4.3–4.4. In-memory conversation record. | `src/presentation-resolver.ts`, `src/execution.ts`, `src/extension.ts` |
 | Client: persist per conversation, attach to request `_meta`, discard superseded | §4.2. Seq-aware merge, session-key pinning, `clear()` generation bump. | `src/client.ts` |
 | Capability advertisement | §1, both directions. | `src/request-meta.ts`, `src/sdk-meta.ts`, `src/schema/draft/schema.ts` |
+| Tool marking (§1.1) | `tools/list` `_meta` with `requirement` / `mayMint`. | `src/tool-meta.ts`, `src/integrate.ts` |
 | Worked examples | Memory and information-flow fixtures demonstrating §3 state commitment. | `src/fixtures/`, `conformance/ifc-e2e.test.ts` |
 | Formal model | Quint executable spec of §4 lifecycle and client merge rules. | `models/conversation-handle/` |
 

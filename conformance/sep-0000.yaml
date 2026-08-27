@@ -13,6 +13,22 @@ requirements:
   - check: sep-0000-server-advertises-extension
     text: "Servers supporting this extension MUST advertise it in the `server/discover` response"
 
+  # ---------------------------------------------------------------- §1.1 Tool marking
+  - check: sep-0000-tool-mark-on-list
+    text: "Servers that advertise this extension MUST mark each tool that uses conversation-scoped state on the corresponding `tools/list` entry under `_meta[\"io.modelcontextprotocol/conversation-handle\"]`"
+  - check: sep-0000-tool-mark-shape
+    text: "The mark MUST include `requirement` of `required` or `preferred`; `mayMint` SHOULD be present and MUST match mint behaviour when present"
+  - check: sep-0000-tool-mark-parse
+    text: "Clients supporting this extension SHOULD read tool `_meta` when deciding whether to attach a handle; unknown fields in the mark object MUST be ignored"
+  - check: sep-0000-tool-mark-client-helpers
+    text: "Unmarked tools MUST be treated as conversation-agnostic; clients MUST NOT infer a handle requirement from the server's extension advertisement alone"
+  - check: sep-0000-tool-mark-required
+    text: "Tools that fail closed when no handle is present MUST advertise `requirement: \"required\"`"
+    note: "Wire shape covered by unit test. IFC fixture marks preferred because fail-closed is principal-taint policy, not unconditional reject-on-missing."
+  - check: sep-0000-lists-invariant-across-conversations
+    text: "The mark MUST be identical for every caller and MUST NOT vary by conversation"
+    note: "Same check id as §6.4 list invariance; e2e asserts identical tool `_meta` across list calls."
+
   # ---------------------------------------------------------------- §2.1 Wire representation
   - check: sep-0000-handle-is-json-string
     text: "A conversation handle MUST be represented on the wire as a single JSON string"
