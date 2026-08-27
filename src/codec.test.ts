@@ -10,6 +10,7 @@ const keys: HandleKey[] = [
 const FAR_FUTURE_EXP = 4_000_000_000;
 
 const cid = new Uint8Array(CID_BYTE_LENGTH).fill(0xab);
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 describe('codec §6.2', () => {
   it('sep-0000-s6.2-roundtrip', () => {
@@ -40,6 +41,48 @@ describe('codec §6.2', () => {
     const tampered = flipHandleByte(handle);
     expect(verifyHandle(keys, tampered)).toBeNull();
   });
+
+  it.each([
+    ['junk characters', '!'],
+    ['padding', '='],
+    ['whitespace', '\n'],
+  ])('rejects %s in base64url handles', (_description, suffix) => {
+    const handle = mintHandle(keys, { cid, exp: FAR_FUTURE_EXP, seq: 1, keyId: 0 });
+    expect(verifyHandle(keys, `${handle}${suffix}`)).toBeNull();
+  });
+
+  it('rejects the standard base64 alphabet', () => {
+    const handle = mintHandle(keys, { cid, exp: FAR_FUTURE_EXP, seq: 1, keyId: 0 });
+    const standardBase64 = handle.replace('-', '+');
+
+    expect(standardBase64).not.toBe(handle);
+    expect(Buffer.from(standardBase64, 'base64url')).toEqual(Buffer.from(handle, 'base64url'));
+    expect(verifyHandle(keys, standardBase64)).toBeNull();
+  });
+
+  it('rejects non-canonical base64url trailing bits', () => {
+    const handle = mintHandle(keys, { cid, exp: FAR_FUTURE_EXP, seq: 1, keyId: 0 });
+    const lastIndex = BASE64URL_ALPHABET.indexOf(handle.at(-1)!);
+    const nonCanonical = `${handle.slice(0, -1)}${BASE64URL_ALPHABET[lastIndex + 1]}`;
+
+    expect(lastIndex & 0x0f).toBe(0);
+    expect(Buffer.from(nonCanonical, 'base64url')).toEqual(Buffer.from(handle, 'base64url'));
+    expect(verifyHandle(keys, nonCanonical)).toBeNull();
+  });
+
+  it.each([CID_BYTE_LENGTH - 1, CID_BYTE_LENGTH + 1])(
+    'rejects minting with a %i-byte cid',
+    (length) => {
+      expect(() =>
+        mintHandle(keys, {
+          cid: new Uint8Array(length),
+          exp: FAR_FUTURE_EXP,
+          seq: 1,
+          keyId: 0,
+        }),
+      ).toThrow(`cid must be ${CID_BYTE_LENGTH} bytes`);
+    },
+  );
 
   it('sep-0000-s6.2-dual-key-id', () => {
     const h0 = mintHandle(keys, { cid, exp: FAR_FUTURE_EXP, seq: 1, keyId: 0 });

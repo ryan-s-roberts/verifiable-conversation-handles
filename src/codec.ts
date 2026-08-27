@@ -35,16 +35,27 @@ export interface VerifyOptions {
 }
 
 const BODY_OVERHEAD = 1 + 1 + CID_BYTE_LENGTH + 4 + 4 + 1;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function encodeBase64Url(buffer: Buffer): string {
   return buffer.toString('base64url');
 }
 
 function decodeBase64Url(handle: string): Buffer {
-  return Buffer.from(handle, 'base64url');
+  if (!BASE64URL_PATTERN.test(handle)) {
+    throw new Error('handle is not unpadded base64url');
+  }
+  const decoded = Buffer.from(handle, 'base64url');
+  if (encodeBase64Url(decoded) !== handle) {
+    throw new Error('handle is not canonical base64url');
+  }
+  return decoded;
 }
 
 function buildBody(input: MintHandleInput): Buffer {
+  if (input.cid.length !== CID_BYTE_LENGTH) {
+    throw new Error(`cid must be ${CID_BYTE_LENGTH} bytes`);
+  }
   const state = input.state ?? Buffer.alloc(0);
   if (state.length > MAX_STATE_BYTE_LENGTH) {
     throw new Error(`state commitment exceeds ${MAX_STATE_BYTE_LENGTH} bytes`);

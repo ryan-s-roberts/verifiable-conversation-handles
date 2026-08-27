@@ -1,5 +1,7 @@
 import { CID_BYTE_LENGTH } from './schema/draft/schema.js';
 
+const CONVERSATION_ID_PATTERN = /^[0-9a-f]{32}$/;
+
 export function cidToHex(cid: Uint8Array): string {
   return Buffer.from(cid).toString('hex');
 }
@@ -12,9 +14,9 @@ export function cidToConversationId(cid: Uint8Array): string {
 }
 
 export function conversationIdToCid(conversationId: string): Uint8Array {
-  const bytes = Buffer.from(conversationId, 'hex');
-  if (bytes.length !== CID_BYTE_LENGTH) {
-    throw new Error(`conversationId must decode to ${CID_BYTE_LENGTH} bytes`);
+  if (!CONVERSATION_ID_PATTERN.test(conversationId)) {
+    throw new Error(`conversationId must be ${CID_BYTE_LENGTH * 2} lowercase hex characters`);
   }
+  const bytes = Buffer.from(conversationId, 'hex');
   return new Uint8Array(bytes);
 }
