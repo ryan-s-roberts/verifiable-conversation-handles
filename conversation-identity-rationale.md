@@ -160,30 +160,35 @@ SEP-2567 treats transcript residence as a resumption feature — handles persist
 — but the same property is what makes them fragile. `_meta` carriage separates the two, so
 persistence becomes deliberate rather than incidental.
 
-**A MAC rather than a random string plus a lookup table.** Both are unforgeable; only the MAC is
-verifiable without storage. A random-handle design recreates, at the application layer, precisely the
-affinity problem SEP-2567 removed at the transport layer — and SEP-2567 documents that the reference
-TypeScript SDK "provides no public API for reconstructing a session on a different node." Proposing a
-design with that property would be proposing something already rejected.
+**A monotonic sequence, with detection normative and policy not.** Ordering is the load-bearing
+protocol contribution. Without `seq`, a replayed identifier is indistinguishable from a current one
+for every consumer, and no ACL check recovers that fact. What to *do* about supersession differs
+irreconcilably between a memory store (serve the snapshot) and an IFC runtime (ignore the snapshot,
+apply current state). Specifying either would make the extension wrong for most of its constituency.
 
-The honest boundary: the MAC makes *validity* stateless, not everything. Conversation state lives on
-the server by definition; supersession detection reads the conversation record (though it adds no
-round-trip, since the server loads that record anyway); and revocation genuinely regresses, because a
-denylist must be consulted on every request. The specification's answer is short lifetimes plus rotation
-rather than pretending revocation is free.
+Issuing the next `seq` for a `cid` requires deployment-wide monotonic allocation (atomic counter or
+equivalent). That sits with the same shared conversation state supersession, retention, and
+principal association already require. Handle *verification* remains affinity-free.
 
-**A monotonic sequence, with detection normative and policy not.** Ordering is the property no
-consumer can recover alone, which makes it a protocol concern. What to *do* about supersession
-differs irreconcilably between a memory store (serve the snapshot) and an IFC runtime (ignore the
-snapshot, apply current state). Specifying either would make the extension wrong for most of its
-constituency.
+**A MAC rather than a random string plus a lookup table.** Both reject unknown names once the server
+loads the conversation record for an accepted request. The MAC's distinctive benefit is **lookup-free
+rejection of garbage** at the edge — fabricated tokens die without a store hit. It is not a substitute
+for the §2.3 association check SEP-2567 already recommends for authenticated servers; that check still
+runs on every accepted presentation. A random-handle design also recreates affinity for the reject
+path that SEP-2567 removed at the transport layer.
+
+The honest boundary: the MAC makes *validity* of the token checkable without storage, not everything.
+Conversation state lives on the server by definition; supersession detection reads the conversation
+record (though it adds no round-trip, since the server loads that record anyway); and revocation
+genuinely regresses, because a denylist must be consulted on every request. The specification's answer
+is short lifetimes plus rotation rather than pretending revocation is free.
 
 **No principal in the payload.** Discussed at length in the SEP's Rationale. In short: layering
 (the auth layer is already authoritative, and a second authority can disagree), delegation (a
 sub-agent may legitimately authenticate as a different workload identity), privacy (a stable per-user
 value in a durable string is a cross-conversation correlator), and simplicity. The cost is that the
-cross-principal check becomes a server obligation rather than a structural property; §6.1 treats
-this as the most serious objection to the current design.
+cross-principal check becomes a server obligation rather than a structural property; the SEP's
+Security Implications treat this as the most serious residual risk.
 
 ---
 

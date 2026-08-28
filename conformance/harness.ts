@@ -1,5 +1,3 @@
-import { Client } from '@modelcontextprotocol/client';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { HandleKey } from '../src/codec.js';
 import { ConversationHandleClient } from '../src/client.js';
 import {
@@ -11,6 +9,9 @@ import {
 import { memoryFixtureTools } from '../src/fixtures/memory-tools.js';
 import { serveMcpEphemeral } from '../src/http-server.js';
 import { EXTENSION_ID, ERROR_CODE_HANDLE_NOT_RECOGNIZED } from '../src/schema/draft/schema.js';
+import { peekCidHexFromHandle } from './peek-cid.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 export const TEST_KEYS: HandleKey[] = [
   { keyId: 0, secret: Buffer.from('test-key-primary-32bytes!!!!!!') },
@@ -161,6 +162,35 @@ export function metaFromResult(result: unknown): unknown {
   return (result as { _meta?: Record<string, unknown> })._meta?.[EXTENSION_ID];
 }
 
+/** Conformance helper: cid hex from a tool result or handleMeta payload (via RECOMMENDED layout peek). */
+export function peekCid(source: unknown): string {
+  let handle: unknown;
+  if (source && typeof source === 'object' && 'handleMeta' in source) {
+    const hm = (source as { handleMeta?: unknown }).handleMeta;
+    handle = hm && typeof hm === 'object' ? (hm as { handle?: unknown }).handle : undefined;
+  } else if (source && typeof source === 'object' && 'handle' in source) {
+    handle = (source as { handle?: unknown }).handle;
+  } else if (source && typeof source === 'object' && ('_meta' in source || 'result' in source)) {
+    const fromResult = metaFromResult(
+      (source as { result?: unknown }).result !== undefined
+        ? (source as { result: unknown }).result
+        : source,
+    );
+    handle =
+      fromResult && typeof fromResult === 'object'
+        ? (fromResult as { handle?: unknown }).handle
+        : undefined;
+  }
+  if (typeof handle !== 'string') {
+    throw new Error('missing handle for cid peek');
+  }
+  const cid = peekCidHexFromHandle(handle);
+  if (!cid) {
+    throw new Error('could not peek cid from handle');
+  }
+  return cid;
+}
+
 /** Apply response metas in arbitrary order (for client seq-ordering tests). */
 export function acceptMetaOutOfOrder(
   handleClient: ConversationHandleClient,
@@ -175,7 +205,6 @@ export function acceptMetaOutOfOrder(
 export function handleMetaFromResult(result: unknown): {
   handle: string;
   seq: number;
-  conversationId?: string;
   supersededHandlePresented?: boolean;
 } | undefined {
   const meta = metaFromResult(result);
@@ -185,7 +214,6 @@ export function handleMetaFromResult(result: unknown): {
   return meta as {
     handle: string;
     seq: number;
-    conversationId?: string;
     supersededHandlePresented?: boolean;
   };
 }

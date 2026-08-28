@@ -77,7 +77,6 @@ describe('ifc use-case e2e', () => {
 
         const prePiiHandle = handleClient.getHandle()!;
         const prePiiSeq = (clean.handleMeta as { seq: number }).seq;
-        const conversationId = (clean.handleMeta as { conversationId: string }).conversationId;
         expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
 
         const pii = await callReceivePii(client, handleClient);
@@ -92,7 +91,6 @@ describe('ifc use-case e2e', () => {
         setClientSession(handleClient, {
           handle: prePiiHandle,
           highestSeq: prePiiSeq,
-          conversationId,
         });
         expect(stateLabelsFromHandle(prePiiHandle)).toEqual([]);
 
@@ -135,7 +133,6 @@ describe('ifc use-case e2e', () => {
         setClientSession(handleClient, {
           handle: forkMeta!.handle,
           highestSeq: forkMeta!.seq,
-          conversationId: forkMeta!.conversationId!,
         });
         const blocked = await client.callTool({
           name: 'egress_post',

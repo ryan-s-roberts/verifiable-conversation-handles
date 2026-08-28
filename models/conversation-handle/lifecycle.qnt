@@ -592,26 +592,23 @@ module lifecycle_small {
 }
 
 // =============================================================================
-// Client seq merge (§4.2)
+// Client seq merge (§4.2) — sessionKey-scoped (matches src/client.ts)
 // =============================================================================
 
 module client {
   const MAX_SEQ: int
 
   type SessionKey = str
-  type ConversationId = str
 
-  // Mirrors ConversationHandleClient: conversations keyed by conversationId; session keys pin to one cid.
+  // Mirrors ConversationHandleClient: one ConversationSession per host sessionKey.
   type ConversationState = {
     highestSeq: int,
     handleId: int,
   }
 
   pure val SESSION_KEYS: Set[SessionKey] = Set("default", "alias", "parent", "child")
-  pure val CONVERSATION_IDS: Set[ConversationId] = Set("cid-a", "cid-b", "parent-cid", "child-cid")
 
-  var conversations: ConversationId -> ConversationState
-  var sessionBindings: SessionKey -> ConversationId
+  var sessions: SessionKey -> ConversationState
   var sessionGenerations: SessionKey -> int
   var lastAccepted: bool
 
@@ -632,15 +629,15 @@ module client {
     handleId: handleId,
   }
 
-  pure def sessionAllowsCid(bindings: SessionKey -> ConversationId, sessionKey: SessionKey, conversationId: ConversationId): bool =
-    if (not(bindings.keys().contains(sessionKey))) {
-      true
+  pure def stateOf(sessionMap: SessionKey -> ConversationState, sessionKey: SessionKey): ConversationState =
+    if (sessionMap.keys().contains(sessionKey)) {
+      sessionMap.get(sessionKey)
     } else {
-      bindings.get(sessionKey) == conversationId
+      emptyState
     }
 
   val clientMonotonic: bool =
-    conversations.keys().forall(cid => conversations.get(cid).highestSeq >= 0)
+    sessions.keys().forall(sk => sessions.get(sk).highestSeq >= 0)
 
   pure def generationOf(generations: SessionKey -> int, sessionKey: SessionKey): int =
     if (generations.keys().contains(sessionKey)) {
@@ -652,30 +649,21 @@ module client {
   val witnessedAccept: bool = lastAccepted
 
   action init: bool = all {
-    conversations' = Map(),
-    sessionBindings' = Map(),
+    sessions' = Map(),
     sessionGenerations' = Map(),
     lastAccepted' = false,
   }
 
   action acceptResponse: bool = {
     nondet sessionKey = SESSION_KEYS.oneOf()
-    nondet conversationId = CONVERSATION_IDS.oneOf()
     nondet seq = 0.to(MAX_SEQ).oneOf()
     nondet handleId = 0.to(9).oneOf()
     val epoch = generationOf(sessionGenerations, sessionKey)
-    val state =
-      if (conversations.keys().contains(conversationId)) {
-        conversations.get(conversationId)
-      } else {
-        emptyState
-      }
+    val state = stateOf(sessions, sessionKey)
     all {
-      sessionAllowsCid(sessionBindings, sessionKey, conversationId),
       canAccept(state, seq, handleId),
       epoch == generationOf(sessionGenerations, sessionKey),
-      conversations' = conversations.put(conversationId, applyAccept(state, seq, handleId)),
-      sessionBindings' = sessionBindings.put(sessionKey, conversationId),
+      sessions' = sessions.put(sessionKey, applyAccept(state, seq, handleId)),
       sessionGenerations' = sessionGenerations,
       lastAccepted' = true,
     }
@@ -683,46 +671,42 @@ module client {
 
   action rejectStale: bool = {
     nondet sessionKey = SESSION_KEYS.oneOf()
-    nondet conversationId = CONVERSATION_IDS.oneOf()
     nondet seq = 0.to(MAX_SEQ).oneOf()
-    val state =
-      if (conversations.keys().contains(conversationId)) {
-        conversations.get(conversationId)
-      } else {
-        emptyState
-      }
+    val state = stateOf(sessions, sessionKey)
     all {
-      sessionAllowsCid(sessionBindings, sessionKey, conversationId),
       seq < state.highestSeq,
-      conversations' = conversations,
-      sessionBindings' = sessionBindings,
+      sessions' = sessions,
       sessionGenerations' = sessionGenerations,
       lastAccepted' = false,
     }
   }
 
-  action rejectCrossConversation: bool = {
-    nondet sessionKey = SESSION_KEYS.oneOf()
-    nondet conversationId = CONVERSATION_IDS.oneOf()
+  // Two session keys are independent — accepting on alias does not clobber default.
+  action acceptOnIndependentSession: bool = {
+    nondet seqA = 0.to(MAX_SEQ).oneOf()
+    nondet seqB = 0.to(MAX_SEQ).oneOf()
+    nondet handleA = 0.to(9).oneOf()
+    nondet handleB = 0.to(9).oneOf()
+    val stateA = stateOf(sessions, "default")
+    val stateB = stateOf(sessions, "alias")
     all {
-      sessionBindings.keys().contains(sessionKey),
-      sessionBindings.get(sessionKey) != conversationId,
-      conversations' = conversations,
-      sessionBindings' = sessionBindings,
+      canAccept(stateA, seqA, handleA),
+      canAccept(stateB, seqB, handleB),
+      sessions' = sessions
+        .put("default", applyAccept(stateA, seqA, handleA))
+        .put("alias", applyAccept(stateB, seqB, handleB)),
       sessionGenerations' = sessionGenerations,
-      lastAccepted' = false,
+      lastAccepted' = true,
     }
   }
 
-  // Mirrors ConversationHandleClient.clear(): bump generation so stale accepts are ignored.
+  // Mirrors ConversationHandleClient.clear(): bump generation and reset session state.
   action clearSession: bool = {
     nondet sessionKey = SESSION_KEYS.oneOf()
     val gen = generationOf(sessionGenerations, sessionKey)
     all {
-      sessionBindings.keys().contains(sessionKey),
       sessionGenerations' = sessionGenerations.put(sessionKey, gen + 1),
-      conversations' = conversations,
-      sessionBindings' = sessionBindings,
+      sessions' = sessions.put(sessionKey, emptyState),
       lastAccepted' = false,
     }
   }
@@ -730,7 +714,7 @@ module client {
   action step: bool = any {
     acceptResponse,
     rejectStale,
-    rejectCrossConversation,
+    acceptOnIndependentSession,
     clearSession,
   }
 }

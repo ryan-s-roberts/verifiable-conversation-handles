@@ -8,24 +8,21 @@ export function flipHandleByte(handle: string): string {
   return mutated.toString('base64url');
 }
 
+/** Inject a handle with an explicit advisory seq (required — no silent coercion). */
 export function setClientSession(
   client: ConversationHandleClient,
-  session: { handle: string; conversationId: string; highestSeq?: number },
+  session: { handle: string; highestSeq: number },
   sessionKey = 'default',
 ): void {
-  const current = client.getSession(sessionKey);
-  const seq = session.highestSeq ?? current.highestSeq;
-  if (session.conversationId.length === 0) {
-    throw new Error('test session requires a conversationId');
+  if (!Number.isSafeInteger(session.highestSeq) || session.highestSeq < 0) {
+    throw new Error('setClientSession requires a non-negative integer highestSeq');
   }
   client.clear(sessionKey);
-
   client.acceptResponseMeta(
     {
       [EXTENSION_ID]: {
         handle: session.handle,
-        conversationId: session.conversationId,
-        seq,
+        seq: session.highestSeq,
         expiresAt: 0,
         supersededHandlePresented: false,
       },
@@ -37,8 +34,8 @@ export function setClientSession(
 export function setClientHandle(
   client: ConversationHandleClient,
   handle: string,
-  conversationId: string,
+  highestSeq: number,
   sessionKey = 'default',
 ): void {
-  setClientSession(client, { handle, conversationId }, sessionKey);
+  setClientSession(client, { handle, highestSeq }, sessionKey);
 }

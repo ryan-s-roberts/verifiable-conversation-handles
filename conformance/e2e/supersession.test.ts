@@ -22,12 +22,12 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
-        const conversationId = handleClient.getSession().conversationId!;
+        const staleSeq = handleClient.getSession().highestSeq;
         await callMemoryAppend(client, handleClient, 'two');
-        setClientHandle(handleClient, stale, conversationId);
+        setClientHandle(handleClient, stale, staleSeq);
         const read = await client.callTool({
           name: 'memory_append',
-          arguments: { text: 'three' },
+          arguments: { text: 'probe' },
           _meta: handleClient.buildRequestMeta(),
         });
         handleClient.acceptResponseMeta((read as { _meta?: Record<string, unknown> })._meta);
@@ -43,9 +43,9 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
-        const conversationId = handleClient.getSession().conversationId!;
+        const staleSeq = handleClient.getSession().highestSeq;
         await callMemoryAppend(client, handleClient, 'two');
-        setClientHandle(handleClient, stale, conversationId);
+        setClientHandle(handleClient, stale, staleSeq);
         const result = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -66,9 +66,9 @@ describe('conversation-handle e2e supersession', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'one');
         const stale = handleClient.getHandle()!;
-        const conversationId = handleClient.getSession().conversationId!;
+        const staleSeq = handleClient.getSession().highestSeq;
         await callMemoryAppend(client, handleClient, 'two');
-        setClientHandle(handleClient, stale, conversationId);
+        setClientHandle(handleClient, stale, staleSeq);
         const append = await client.callTool({
           name: 'memory_append',
           arguments: { text: 'three' },

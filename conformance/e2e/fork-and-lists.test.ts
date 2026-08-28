@@ -3,6 +3,7 @@ import {
   callMemoryAppend,
   callMemoryRead,
   metaFromResult,
+  peekCid,
   textFromResult,
   withClient,
   withHarness,
@@ -20,7 +21,7 @@ describe('conversation-handle e2e fork and lists', () => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         await callMemoryAppend(client, handleClient, 'parent-data');
         const parent = await callMemoryAppend(client, handleClient, 'parent-data-2');
-        const parentId = (parent.handleMeta as { conversationId: string }).conversationId;
+        const parentId = peekCid(parent);
         const parentHandle = handleClient.getHandle()!;
         expect((parent.handleMeta as { seq: number }).seq).toBeGreaterThan(1);
         const forked = await client.callTool({
@@ -33,20 +34,17 @@ describe('conversation-handle e2e fork and lists', () => {
           'fork',
         );
         const forkMeta = metaFromResult(forked) as {
-          conversationId: string;
           handle: string;
           seq: number;
         };
-        const forkId = forkMeta.conversationId;
+        const forkId = peekCid(forkMeta);
         expect(forkId).not.toBe(parentId);
         expect(forkMeta.seq).toBe(1);
         expect(textFromResult(forked)).toBe('[]');
         expect(handleClient.getSession()).toMatchObject({
-          conversationId: parentId,
           handle: parentHandle,
         });
         expect(handleClient.getSession('fork')).toMatchObject({
-          conversationId: forkId,
           handle: forkMeta.handle,
           highestSeq: 1,
         });
@@ -77,7 +75,7 @@ describe('conversation-handle e2e fork and lists', () => {
         ]);
         expect(lists[0].tools?.map((t) => t.name).sort()).toEqual(lists[1].tools?.map((t) => t.name).sort());
         expect(metaByName(lists[0].tools)).toEqual(metaByName(lists[1].tools));
-        expect((second.handleMeta as { conversationId: string }).conversationId).toBeDefined();
+        expect(peekCid(second)).toMatch(/^[0-9a-f]{32}$/);
       });
     });
   });

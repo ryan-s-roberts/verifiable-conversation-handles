@@ -73,11 +73,11 @@ invokeToolHandler (extension.ts)
 
 | Behavior | Impl | Model |
 |----------|------|-------|
-| Accept `seq >= highestSeq` per `conversationId` | `acceptResponseMeta` keyed by `conversationId` | `canAccept` on `conversations` map |
+| Accept `seq >= highestSeq` per host `sessionKey` | `acceptResponseMeta` keyed by `sessionKey` (no `conversationId` response mirror — §4.1) | `canAccept` on `sessions` map |
 | Discard lower seq | early return when `seq < highestSeq` | `rejectStale` |
 | Reject equal seq with different handle | `seq === highestSeq && handle differs` | `canAccept` handleId guard |
-| Session key pinned to `conversationId` | `sessionConversationIds` | `sessionBindings` + `rejectCrossConversation` |
-| Fork in child session key | e2e `fork-and-lists.test.ts` | `rejectCrossConversation` + `clearSession` |
+| Session isolation | Distinct host session keys (fork → child key) | `acceptOnIndependentSession` |
+| clear bumps generation | `clear(sessionKey)` | `clearSession` |
 
 ---
 

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { cidToConversationId } from '../../src/cid.js';
 import { mintHandle } from '../../src/codec.js';
 import { flipHandleByte, setClientHandle, setClientSession } from '../../src/test-helpers.js';
 import {
@@ -30,14 +29,14 @@ describe('conversation-handle e2e errors and meta', () => {
   it('sep-0000-respect-max-handle-bytes: rejects handles above client maxHandleBytes', async () => {
     await withHarness(async (harness) => {
       let stolen = '';
-      let conversationId = '';
+      let stolenSeq = 0;
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const result = await callMemoryAppend(client, handleClient, 'x');
+        await callMemoryAppend(client, handleClient, 'x');
         stolen = handleClient.getHandle()!;
-        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
+        stolenSeq = handleClient.getSession().highestSeq;
       });
       await withClient(harness, 'alice', async (client, handleClient) => {
-        setClientHandle(handleClient, stolen, conversationId);
+        setClientHandle(handleClient, stolen, stolenSeq);
         const meta = {
           ...handleClient.buildRequestMeta(),
           [CLIENT_CAPABILITIES_META_KEY]: {
@@ -60,12 +59,11 @@ describe('conversation-handle e2e errors and meta', () => {
   it('sep-0000-error-code-range + sep-0000-actionable-failure-error: handle errors use normative §8 envelope', async () => {
     await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const result = await callMemoryAppend(client, handleClient, 'x');
-        const conversationId = (result.handleMeta as { conversationId: string }).conversationId;
+        await callMemoryAppend(client, handleClient, 'x');
         setClientHandle(
           handleClient,
           flipHandleByte(handleClient.getHandle()!),
-          conversationId,
+          handleClient.getSession().highestSeq,
         );
         const read = await client.callTool({
           name: 'memory_read',
@@ -90,11 +88,9 @@ describe('conversation-handle e2e errors and meta', () => {
     let now = 1_000_000;
     await withHarness(async (harness) => {
       let retiredHandle = '';
-      let conversationId = '';
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const result = await callMemoryAppend(client, handleClient, 'old');
+        await callMemoryAppend(client, handleClient, 'old');
         retiredHandle = handleClient.getHandle()!;
-        conversationId = (result.handleMeta as { conversationId: string }).conversationId;
         now += 120_000;
         expect(harness.manager.purgeExpiredConversations()).toBe(1);
       });
@@ -102,7 +98,6 @@ describe('conversation-handle e2e errors and meta', () => {
         setClientSession(handleClient, {
           handle: retiredHandle,
           highestSeq: 1,
-          conversationId,
         });
         const read = await client.callTool({
           name: 'memory_read',
@@ -126,7 +121,7 @@ describe('conversation-handle e2e errors and meta', () => {
           seq: 1,
           keyId: 0,
         });
-        setClientHandle(handleClient, foreign, cidToConversationId(foreignCid));
+        setClientHandle(handleClient, foreign, 1);
         const read = await callMemoryRead(client, handleClient);
         expect(read.result).toMatchObject({ isError: true });
         expect(textFromResult(read.result)).toMatch(/integrity|invalid/i);

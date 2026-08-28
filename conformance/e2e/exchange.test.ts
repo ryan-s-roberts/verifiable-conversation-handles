@@ -4,6 +4,7 @@ import {
   callMemoryAppend,
   callMemoryRead,
   metaFromResult,
+  peekCid,
   textFromResult,
   withClient,
   withHarness,
@@ -13,11 +14,11 @@ import {
  * SEP-0000 e2e: expired-handle exchange and cid stability (§4.4, §2.2).
  *
  * Exchange path renews expiry without changing cid; expired handles cannot present state;
- * `conversationId` is the hex encoding of the 128-bit cid.
+ * cid hex is readable from the handle wire layout for diagnostics (not a response `_meta` field).
  */
 describe('conversation-handle e2e exchange', () => {
   /**
-   * §4.4: authentic expired handle on exchange resumes the same `conversationId` and returns
+   * §4.4: authentic expired handle on exchange resumes the same cid and returns
    * a fresh handle without leaking prior tool output in the exchange response body.
    */
   it('sep-0000-exchange-expired-handle + sep-0000-handle-determines-expiry: expired authentic handle resumes same cid', async () => {
@@ -25,18 +26,19 @@ describe('conversation-handle e2e exchange', () => {
     await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const first = await callMemoryAppend(client, handleClient, 'persist');
-        const conversationId = (first.handleMeta as { conversationId: string }).conversationId;
+        const conversationId = peekCid(first);
         const expired = handleClient.getHandle()!;
+        const expiredSeq = handleClient.getSession().highestSeq;
         now = 4_000_000_001;
-        setClientHandle(handleClient, expired, conversationId);
+        setClientHandle(handleClient, expired, expiredSeq);
         const exchanged = await client.callTool({
           name: 'memory_read',
           arguments: {},
           _meta: handleClient.buildRequestMeta(),
         });
         handleClient.acceptResponseMeta((exchanged as { _meta?: Record<string, unknown> })._meta);
-        const meta = metaFromResult(exchanged) as { conversationId: string; handle: string };
-        expect(meta.conversationId).toBe(conversationId);
+        const meta = metaFromResult(exchanged) as { handle: string };
+        expect(peekCid(meta)).toBe(conversationId);
         expect(typeof meta.handle).toBe('string');
         expect(textFromResult(exchanged)).toBe('');
         expect((exchanged as { content?: unknown[] }).content ?? []).toHaveLength(0);
@@ -51,11 +53,11 @@ describe('conversation-handle e2e exchange', () => {
     let now = 1_000_000;
     await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
-        const first = await callMemoryAppend(client, handleClient, 'x');
-        const conversationId = (first.handleMeta as { conversationId: string }).conversationId;
+        await callMemoryAppend(client, handleClient, 'x');
         const expired = handleClient.getHandle()!;
+        const expiredSeq = handleClient.getSession().highestSeq;
         now = 4_000_000_001;
-        setClientHandle(handleClient, expired, conversationId);
+        setClientHandle(handleClient, expired, expiredSeq);
         const exchanged = await client.callTool({
           name: 'memory_read',
           arguments: {},
@@ -68,12 +70,12 @@ describe('conversation-handle e2e exchange', () => {
     }, { now: () => now });
   });
 
-  /** §2.2: `conversationId` is lowercase hex of the 128-bit cid (32 characters). */
-  it('sep-0000-cid-stable-across-handles: conversationId is 32 hex chars from 128-bit cid', async () => {
+  /** §2.2: cid is lowercase hex of the 128-bit identifier (32 characters), peeked from the handle. */
+  it('sep-0000-cid-stable-across-handles: cid peeked from handle is 32 hex chars', async () => {
     await withHarness(async (harness) => {
       await withClient(harness, 'alice', async (client, handleClient) => {
         const { handleMeta } = await callMemoryAppend(client, handleClient, 'entropy');
-        const conversationId = (handleMeta as { conversationId: string }).conversationId;
+        const conversationId = peekCid(handleMeta);
         expect(conversationId).toMatch(/^[0-9a-f]{32}$/);
       });
     });

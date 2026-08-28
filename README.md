@@ -56,15 +56,16 @@ Expired-handle exchange mints fresh `_meta` only; the presenting tool handler is
 ## Client concurrency (§4.2)
 
 Parallel in-flight tool calls may send the same handle. Within an issuer-scoped
-`ConversationHandleClient`, sequence state is keyed by `conversationId`: only a
-higher-sequence handle for the **same** conversation replaces the stored handle.
+`ConversationHandleClient`, sequence state is keyed by host **`sessionKey`**: only a
+higher-sequence handle for the **same** session key replaces the stored handle.
+Response `_meta` does not mirror `conversationId` (§4.1); hosts use their own
+thread/UI keys.
 
 ### Session keys (`sessionKey`)
 
 The client API accepts an optional `sessionKey` on `acceptResponseMeta`,
 `buildRequestMeta`, `getHandle`, `getSession`, and `clear`. Keys are **library-local
-routing labels**, not wire fields. Each key is pinned to the first `conversationId`
-it accepts; a response for a different `conversationId` on that key is ignored.
+routing labels**, not wire fields.
 
 Use separate session keys when tracking multiple conversations on one MCP client
 instance — especially **fork** (§4.5):
@@ -81,7 +82,7 @@ const forked = await client.callTool({
 handleClient.acceptResponseMeta(forked._meta, 'fork');
 ```
 
-`clear(sessionKey)` drops that key's binding and bumps a generation counter so
+`clear(sessionKey)` drops that key's state and bumps a generation counter so
 late in-flight responses cannot re-bind after an intentional reset.
 
 Read-only server responses do not rotate the handle unless state changes or expiry

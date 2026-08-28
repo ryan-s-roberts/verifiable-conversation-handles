@@ -138,7 +138,7 @@ module policy_inactive_tests {
 }
 
 // =============================================================================
-// Client seq merge (§4.2) — conversationId-scoped
+// Client seq merge (§4.2) — sessionKey-scoped
 // =============================================================================
 
 module client_tests {
@@ -152,12 +152,12 @@ module client_tests {
       .expect(clientMonotonic)
   }
 
-  // Session key pinned to first conversationId — fork must use a child session key.
-  run rejectCrossConversationTest = {
+  // Independent session keys do not clobber each other.
+  run independentSessionsTest = {
     init
-      .then(acceptResponse)
-      .then(rejectCrossConversation)
-      .expect(not(witnessedAccept))
+      .then(acceptOnIndependentSession)
+      .expect(witnessedAccept)
+      .expect(clientMonotonic)
   }
 
   // clear() bumps session generation; accept still succeeds on a fresh epoch.

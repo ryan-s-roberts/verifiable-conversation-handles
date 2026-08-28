@@ -50,7 +50,6 @@ describe('conversation-handle e2e client concurrency', () => {
           {
             [EXTENSION_ID]: {
               handle: 'high-handle',
-              conversationId: 'abc',
               seq: 5,
               expiresAt: 4_000_000_000,
               supersededHandlePresented: false,
@@ -59,7 +58,6 @@ describe('conversation-handle e2e client concurrency', () => {
           {
             [EXTENSION_ID]: {
               handle: 'low-handle',
-              conversationId: 'abc',
               seq: 2,
               expiresAt: 4_000_000_000,
               supersededHandlePresented: false,

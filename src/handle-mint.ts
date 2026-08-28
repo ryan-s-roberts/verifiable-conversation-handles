@@ -1,5 +1,4 @@
 import { encodeHandle } from './codec.js';
-import { cidToConversationId } from './cid.js';
 import { ConversationHandleError } from './errors.js';
 import type { PluginContext } from './plugin-context.js';
 import { EXTENSION_ID } from './schema/draft/schema.js';
@@ -7,6 +6,10 @@ import type { ConversationRecord } from './store.js';
 
 const MAX_MINT_CAS_RETRIES = 8;
 
+/**
+ * Mint a replacement handle with deployment-wide monotonic seq via compare-and-bump (§4.2).
+ * Response `_meta` omits cleartext `conversationId` (§4.1).
+ */
 export function mintResponseMeta(
   ctx: PluginContext,
   record: ConversationRecord,
@@ -32,7 +35,6 @@ export function mintResponseMeta(
       return {
         [EXTENSION_ID]: {
           handle,
-          conversationId: cidToConversationId(current.cid),
           seq: nextSeq,
           expiresAt,
           supersededHandlePresented: superseded,

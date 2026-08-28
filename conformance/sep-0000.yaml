@@ -93,7 +93,7 @@ requirements:
     text: "The server MUST either mint a new conversation and return a handle, or return no handle, according to its advertised `onMissingHandle` setting"
   - check: sep-0000-mirrors-not-accepted-as-input
     text: "Servers MUST NOT accept the advisory mirrors as input"
-    note: "Send `conversationId`/`seq` in the request with no `handle`; assert the server does not resolve a conversation from them."
+    note: "Send advisory `seq` (and/or other non-handle fields) in the request with no `handle`; assert the server does not resolve a conversation from them. Per §5.1, servers MUST NOT read conversation identity except from `params._meta[\"io.modelcontextprotocol/conversation-handle\"].handle`."
   - check: sep-0000-client-orders-by-seq
     text: "Clients MUST use `seq` solely to order handles they have received"
   - text: "Clients MUST NOT rely on any mirrored field for a security decision, and MUST NOT attempt to reconstruct a handle from them"
@@ -155,8 +155,8 @@ requirements:
   - check: sep-0000-handle-carried-in-meta
     text: "The handle MUST be carried in `params._meta[\"io.modelcontextprotocol/conversation-handle\"].handle`"
   - check: sep-0000-reject-handle-in-tool-arguments
-    text: "Servers MUST NOT accept a conversation handle from tool arguments, resource URIs, prompt arguments, or any other position whose contents are authored by the model; a server that encounters a handle-shaped value in such a position MUST ignore it"
-    note: "Central design requirement. Send a valid handle as a tool argument with none in `_meta`; assert no conversation is resolved."
+    text: "Servers MUST NOT read conversation identity from any position other than `params._meta[\"io.modelcontextprotocol/conversation-handle\"].handle`; values appearing in tool arguments, resource URIs, prompt arguments, or other model-authored positions MUST be ignored for conversation binding"
+    note: "Central design requirement (§5.1). Send a valid handle as a tool argument with none in `_meta`; assert no conversation is resolved. No shape detection is required."
   - text: "Clients SHOULD NOT render the handle into model context"
     excluded: "Client rendering; not observable at the protocol level."
   - check: sep-0000-pop-binding-when-available

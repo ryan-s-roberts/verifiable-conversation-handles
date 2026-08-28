@@ -56,10 +56,9 @@ export interface ConversationHandleRequestMeta {
   fork?: boolean;
 }
 
-/** Response _meta payload (advisory mirrors + handle) */
+/** Response _meta payload (handle + advisory mirrors; no cleartext conversationId — §4.1) */
 export interface ConversationHandleResponseMeta {
   handle: string;
-  conversationId: string;
   seq: number;
   expiresAt: number;
   supersededHandlePresented: boolean;

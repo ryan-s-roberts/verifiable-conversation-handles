@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { callMemoryAppend, callMemoryRead, withClient, withHarness } from '../harness.js';
+import {
+  callMemoryAppend,
+  callMemoryRead,
+  peekCid,
+  withClient,
+  withHarness,
+} from '../harness.js';
 
 /**
  * SEP-0000 e2e: establishment and rotation (§4.1–§4.2).
@@ -20,8 +26,8 @@ describe('conversation-handle e2e establishment and rotation', () => {
   });
 
   /**
-   * §4.2: state-changing responses bump seq strictly; `conversationId` (cid) stays stable
-   * across rotations within the same conversation.
+   * §4.2: state-changing responses bump seq strictly; cid stays stable
+   * across rotations within the same conversation (peeked from handles).
    */
   it('sep-0000-rotate-on-state-commitment-change + sep-0000-replacement-seq-monotonic + sep-0000-seq-strictly-increases: seq increases on state-changing response', async () => {
     await withHarness(async (harness) => {
@@ -31,9 +37,7 @@ describe('conversation-handle e2e establishment and rotation', () => {
         expect((second.handleMeta as { seq: number }).seq).toBeGreaterThan(
           (first.handleMeta as { seq: number }).seq,
         );
-        expect((second.handleMeta as { conversationId: string }).conversationId).toBe(
-          (first.handleMeta as { conversationId: string }).conversationId,
-        );
+        expect(peekCid(second)).toBe(peekCid(first));
       });
     });
   });
