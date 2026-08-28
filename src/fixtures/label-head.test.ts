@@ -7,10 +7,15 @@ import { describe, expect, it } from 'vitest';
 import { decodeLabelHead, encodeLabelHead } from './label-head.js';
 
 describe('label-head codec', () => {
-  /** §3: versioned label head round-trips empty and populated sets. */
+  /** §3: versioned label head round-trips empty and multi-label (sorted) sets. */
   it('round-trips empty and populated label sets', () => {
     expect(decodeLabelHead(encodeLabelHead([]))).toEqual([]);
     expect(decodeLabelHead(encodeLabelHead(['pii']))).toEqual(['pii']);
+    expect(decodeLabelHead(encodeLabelHead(['pii', 'credentials', 'untrusted']))).toEqual([
+      'credentials',
+      'pii',
+      'untrusted',
+    ]);
   });
 
   /** Backward compatibility: pre-versioned plain JSON array heads still decode. */

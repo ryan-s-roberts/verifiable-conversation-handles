@@ -223,35 +223,55 @@ export function textFromResult(result: unknown): string {
   return content?.[0]?.text ?? '';
 }
 
-export async function callReceivePii(
+/** Shared IFC / fixture tool caller: present handle meta, invoke, accept response. */
+export async function callIfcTool(
+  client: Client,
+  handleClient: ConversationHandleClient,
+  name: string,
+  args: Record<string, unknown> = {},
+  sessionKey = 'default',
+): Promise<{ result: unknown; handleMeta: unknown }> {
+  const result = await client.callTool({
+    name,
+    arguments: args,
+    _meta: handleClient.buildRequestMeta(sessionKey),
+  });
+  handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta, sessionKey);
+  return { result, handleMeta: metaFromResult(result) };
+}
+
+export function callReceivePii(
   client: Client,
   handleClient: ConversationHandleClient,
   sessionKey = 'default',
 ): Promise<{ result: unknown; handleMeta: unknown }> {
-  const result = await client.callTool({
-    name: 'receive_pii',
-    arguments: {},
-    _meta: handleClient.buildRequestMeta(sessionKey),
-  });
-  const meta = (result as { _meta?: Record<string, unknown> })._meta?.[EXTENSION_ID];
-  handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta, sessionKey);
-  return { result, handleMeta: meta };
+  return callIfcTool(client, handleClient, 'receive_pii', {}, sessionKey);
 }
 
-export async function callEgressPost(
+export function callReceiveCredentials(
+  client: Client,
+  handleClient: ConversationHandleClient,
+  sessionKey = 'default',
+): Promise<{ result: unknown; handleMeta: unknown }> {
+  return callIfcTool(client, handleClient, 'receive_credentials', {}, sessionKey);
+}
+
+export function callSanitizeCredentials(
+  client: Client,
+  handleClient: ConversationHandleClient,
+  sessionKey = 'default',
+): Promise<{ result: unknown; handleMeta: unknown }> {
+  return callIfcTool(client, handleClient, 'sanitize_credentials', {}, sessionKey);
+}
+
+export function callEgressPost(
   client: Client,
   handleClient: ConversationHandleClient,
   destination: string,
   body: string,
   sessionKey = 'default',
 ): Promise<{ result: unknown; handleMeta: unknown }> {
-  const result = await client.callTool({
-    name: 'egress_post',
-    arguments: { destination, body },
-    _meta: handleClient.buildRequestMeta(sessionKey),
-  });
-  handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta, sessionKey);
-  return { result, handleMeta: metaFromResult(result) };
+  return callIfcTool(client, handleClient, 'egress_post', { destination, body }, sessionKey);
 }
 
 export { memoryFixtureTools, ERROR_CODE_HANDLE_NOT_RECOGNIZED };

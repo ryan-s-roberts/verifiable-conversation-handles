@@ -6,7 +6,9 @@ import { setClientSession } from '../src/test-helpers.js';
 import { readToolHandleMeta } from '../src/tool-meta.js';
 import {
   callEgressPost,
+  callReceiveCredentials,
   callReceivePii,
+  callSanitizeCredentials,
   handleMetaFromResult,
   startIfcTestHarness,
   TEST_KEYS,
@@ -41,14 +43,17 @@ describe('ifc use-case e2e', () => {
       await withClient(harness, 'alice', async (client) => {
         const listed = await client.listTools();
         const byName = Object.fromEntries((listed.tools ?? []).map((t) => [t.name, t]));
-        expect(readToolHandleMeta(byName.receive_pii)).toEqual({
-          requirement: 'preferred',
-          mayMint: true,
-        });
-        expect(readToolHandleMeta(byName.egress_post)).toEqual({
-          requirement: 'preferred',
-          mayMint: true,
-        });
+        for (const name of [
+          'receive_pii',
+          'receive_credentials',
+          'sanitize_credentials',
+          'egress_post',
+        ]) {
+          expect(readToolHandleMeta(byName[name])).toEqual({
+            requirement: 'preferred',
+            mayMint: true,
+          });
+        }
       });
     } finally {
       await harness.close();
@@ -332,6 +337,129 @@ describe('ifc use-case e2e', () => {
         const later = await callEgressPost(client, handleClient, 'webhook', 'post-race');
         expect(later.result).toMatchObject({ isError: true });
         expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * Plasm FlowFacts: parallel joins of *distinct* labels.
+   *
+   * Concurrent `receive_pii` ∥ `receive_credentials`. Journal is a join-semilattice (set union) and
+   * must retain both. Client LWW keeps only max(seq); that commitment may lag the journal.
+   * Enforcement still uses the journal — proven by post-request mint embedding the full join.
+   */
+  it('ifc-use-case LWW multi-label: parallel distinct marks — journal is join; commitment may lag', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callEgressPost(client, handleClient, 'analytics', 'seed');
+        const meta = handleClient.buildRequestMeta();
+
+        const [piiResult, credResult] = await Promise.all([
+          client.callTool({ name: 'receive_pii', arguments: {}, _meta: meta }),
+          client.callTool({ name: 'receive_credentials', arguments: {}, _meta: meta }),
+        ]);
+        handleClient.acceptResponseMeta((piiResult as { _meta?: Record<string, unknown> })._meta);
+        handleClient.acceptResponseMeta((credResult as { _meta?: Record<string, unknown> })._meta);
+
+        expect(harness.journal.hasPrincipal('alice', 'pii')).toBe(true);
+        expect(harness.journal.hasPrincipal('alice', 'credentials')).toBe(true);
+
+        const blocked = await callEgressPost(client, handleClient, 'webhook', 'after-multi-taint');
+        expect(blocked.result).toMatchObject({ isError: true });
+        expect(textFromResult(blocked.result)).toMatch(/egress blocked.*(pii|credentials)/i);
+        // Post-request mint embeds the authoritative journal join.
+        expect(stateLabelsFromHandle(handleClient.getHandle()!).sort()).toEqual([
+          'credentials',
+          'pii',
+        ]);
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * Plasm sanitizer: clear is non-monotone. After both labels, `sanitize_credentials` clears one;
+   * `pii` remains and still blocks egress.
+   */
+  it('ifc-use-case multi-label: sanitize clears credentials; residual pii still blocks', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callReceivePii(client, handleClient);
+        await callReceiveCredentials(client, handleClient);
+        expect(stateLabelsFromHandle(handleClient.getHandle()!).sort()).toEqual([
+          'credentials',
+          'pii',
+        ]);
+
+        const sanitized = await callSanitizeCredentials(client, handleClient);
+        expect(textFromResult(sanitized.result)).toContain('credentials');
+        expect(harness.journal.hasPrincipal('alice', 'credentials')).toBe(false);
+        expect(harness.journal.hasPrincipal('alice', 'pii')).toBe(true);
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+
+        const blocked = await callEgressPost(client, handleClient, 'webhook', 'still-pii');
+        expect(blocked.result).toMatchObject({ isError: true });
+        expect(textFromResult(blocked.result)).toMatch(/egress blocked.*pii/i);
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * Sanitize ∥ rematerialize race: next egress follows the journal, not the LWW-retained head.
+   */
+  it('ifc-use-case LWW multi-label: concurrent sanitize + rematerialize — journal authoritative', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callReceiveCredentials(client, handleClient);
+        const meta = handleClient.buildRequestMeta();
+
+        const [sanitizeResult, rematerializeResult] = await Promise.all([
+          client.callTool({ name: 'sanitize_credentials', arguments: {}, _meta: meta }),
+          client.callTool({ name: 'receive_credentials', arguments: {}, _meta: meta }),
+        ]);
+        handleClient.acceptResponseMeta(
+          (sanitizeResult as { _meta?: Record<string, unknown> })._meta,
+        );
+        handleClient.acceptResponseMeta(
+          (rematerializeResult as { _meta?: Record<string, unknown> })._meta,
+        );
+
+        const journalHas = harness.journal.hasPrincipal('alice', 'credentials');
+        const later = await callEgressPost(client, handleClient, 'webhook', 'post-sanitize-race');
+        if (journalHas) {
+          expect(later.result).toMatchObject({ isError: true });
+        } else {
+          expect(later.result).not.toMatchObject({ isError: true });
+        }
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * Full clear path: credentials alone, then sanitize → egress allowed; commitment clean.
+   */
+  it('ifc-use-case multi-label: sanitize-only path reopens egress', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callReceiveCredentials(client, handleClient);
+        const blocked = await callEgressPost(client, handleClient, 'webhook', 'secret');
+        expect(blocked.result).toMatchObject({ isError: true });
+
+        await callSanitizeCredentials(client, handleClient);
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual([]);
+        const ok = await callEgressPost(client, handleClient, 'analytics', 'clean-again');
+        expect(ok.result).not.toMatchObject({ isError: true });
       });
     } finally {
       await harness.close();

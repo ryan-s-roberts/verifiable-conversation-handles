@@ -37,8 +37,10 @@ See [Verification](#verification) for full commands.
 | Async, crash-stop | Interleaved `step`; no Byzantine server | implicit |
 | Two principals | `PRINCIPALS = Set("alice", "bob")` | bounded exploration |
 
-**Not modeled:** §1 negotiation, §5.2 DPoP, §6 encoding, §6.3 asymmetric profile,
+**Not modeled (in `lifecycle`):** §1 negotiation, §5.2 DPoP, §6 encoding, §6.3 asymmetric profile,
 `maxHandleBytes`, tool handlers, IFC, concurrent CAS mint retries.
+
+**IFC multi-label head:** see [`flow_facts.qnt`](./flow_facts.qnt) (Plasm-shaped `FlowFacts` join + sanitizer clear × commitment LWW).
 
 ---
 
@@ -50,6 +52,8 @@ See [Verification](#verification) for full commands.
 | `lifecycle_small` | Runnable instance: `HANDLE_LIFETIME=10`, `RETENTION=50`, `MAX_TIME=30`, `ON_MISSING="new"` |
 | `client` | Client `highestSeq` merge for concurrent responses |
 | `client_small` | Runnable client instance (`MAX_SEQ=10`) |
+| `flow_facts` | Multi-label journal (join + clear) × opaque commitment LWW; two-phase egress |
+| `flow_facts_small` | Runnable IFC instance (`MAX_SEQ=8`) |
 
 ---
 

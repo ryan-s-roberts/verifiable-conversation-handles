@@ -161,14 +161,36 @@ E2e coverage **without** Quint analogue: negotiation, §1.1 tool marking, retent
 
 ---
 
+## Multi-label IFC (`flow_facts.qnt`)
+
+Plasm-shaped companion model for `src/fixtures/ifc-tools.ts` / `conformance/ifc-e2e.test.ts`.
+
+| Implementation | Quint | Match |
+|----------------|-------|-------|
+| `TaintJournal.mark` (set union) | `markAndMint` | **Yes** |
+| `TaintJournal.clearLabels` (sanitizer) | `clearAndMint` | **Yes** |
+| `blocksEgress` / `EGRESS_FORBIDDEN_LABELS` | `hasForbidden` ∩ `FORBIDDEN` | **Yes** |
+| Label head in state commitment | `server.snapshots: seq → Set[Label]` | **Yes** (abstract) |
+| Client LWW `acceptResponseMeta` | `acceptLww` / `rejectStale` | **Yes** |
+| Egress check then mint (TOCTOU) | `beginEgress` → `mutateWhilePending` → `finishMint` | **Yes** |
+| Atomic egress (no interleave) | `egressAtomic` | **Yes** |
+
+**Invariant:** `clientMonotonicSeq`, `clientCommitIsSnapshot`, `egressOutcomeConsistent` (handler-at-begin vs journal-at-mint agrees, or `sawDisagreement`).
+
+```bash
+quint test models/conversation-handle/flow_facts_test.qnt --main=flow_facts_tests
+```
+
+---
+
 ## Quick re-check command
 
 After changing `src/presentation-resolver.ts`, `execution.ts`, `rotation.ts`,
-`handle-mint.ts`, or `client.ts`:
+`handle-mint.ts`, `client.ts`, or `src/fixtures/ifc-tools.ts`:
 
 ```bash
 npm run quint:typecheck && npm run quint:test && npm run quint:run
 ```
 
-Then update this document if presentation order, rotation triggers, or exchange
-semantics change.
+Then update this document if presentation order, rotation triggers, exchange
+semantics, or IFC journal rules change.
