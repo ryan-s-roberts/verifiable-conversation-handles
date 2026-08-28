@@ -206,4 +206,135 @@ describe('ifc use-case e2e', () => {
       await harness.close();
     }
   });
+
+  /**
+   * §4.2 LWW × IFC: parallel taint sources.
+   *
+   * N concurrent `receive_pii` calls each mint a replacement; the client keeps only max(seq).
+   * Intermediate commitments are dropped client-side by construction. For monotone labels that is
+   * safe *only because* enforcement reads the server journal (§4.3 IFC policy), not the retained
+   * commitment bytes. Every minted head still carries `pii` once any sibling has marked.
+   */
+  it('ifc-use-case LWW: parallel receive_pii — client keeps max seq; journal authoritative', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callEgressPost(client, handleClient, 'analytics', 'seed');
+        const meta = handleClient.buildRequestMeta();
+        const results = await Promise.all(
+          [0, 1, 2].map(() =>
+            client.callTool({
+              name: 'receive_pii',
+              arguments: {},
+              _meta: meta,
+            }),
+          ),
+        );
+        for (const result of results) {
+          handleClient.acceptResponseMeta((result as { _meta?: Record<string, unknown> })._meta);
+        }
+        const metas = results.map((r) => handleMetaFromResult(r)).filter(Boolean) as Array<{
+          handle: string;
+          seq: number;
+        }>;
+        expect(metas.length).toBe(3);
+        const maxSeq = Math.max(...metas.map((m) => m.seq));
+        expect(handleClient.getSession().highestSeq).toBe(maxSeq);
+        for (const m of metas) {
+          expect(stateLabelsFromHandle(m.handle)).toEqual(['pii']);
+        }
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+        expect(harness.journal.hasPrincipal('alice', 'pii')).toBe(true);
+
+        const blocked = await callEgressPost(client, handleClient, 'webhook', 'after-parallel-taint');
+        expect(blocked.result).toMatchObject({ isError: true });
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * §4.2 LWW × IFC: out-of-order accept must not resurrect a clean commitment over a newer tainted one.
+   *
+   * After taint, accepting the pre-PII (lower seq) meta is a no-op. The client continues to present
+   * the higher-seq handle; egress stays blocked via the journal even if someone inspects the discarded
+   * clean commitment bytes.
+   */
+  it('ifc-use-case LWW: lower-seq clean commitment cannot displace tainted higher seq', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        const clean = await callEgressPost(client, handleClient, 'analytics', 'seed');
+        const cleanMeta = (clean.result as { _meta?: Record<string, unknown> })._meta;
+        const cleanSeq = (clean.handleMeta as { seq: number }).seq;
+
+        const pii = await callReceivePii(client, handleClient);
+        const taintedSeq = (pii.handleMeta as { seq: number }).seq;
+        expect(taintedSeq).toBeGreaterThan(cleanSeq);
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+
+        handleClient.acceptResponseMeta(cleanMeta);
+        expect(handleClient.getSession().highestSeq).toBe(taintedSeq);
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+
+        const blocked = await callEgressPost(client, handleClient, 'webhook', 'lww-regression');
+        expect(blocked.result).toMatchObject({ isError: true });
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  /**
+   * §4.2 / §4.3 TOCTOU under concurrency: egress check vs commitment mint.
+   *
+   * Parallel `receive_pii` + `egress_post` on the same presented handle. The egress *handler* may
+   * observe a clean journal and succeed, while a sibling taint lands before response mint — so a
+   * successful egress response can carry a `pii` commitment. Conversely, egress may lose the race
+   * and error. Either way: never treat the retained commitment as the allow/deny oracle; the journal
+   * is authoritative. LWW on the client merely picks which opaque snapshot bytes survive.
+   */
+  it('ifc-use-case LWW: concurrent taint+egress — commitment may disagree with handler outcome', async () => {
+    const harness = await startIfcTestHarness();
+    try {
+      await withClient(harness, 'alice', async (client, handleClient) => {
+        await callEgressPost(client, handleClient, 'analytics', 'seed');
+        const meta = handleClient.buildRequestMeta();
+
+        const [piiResult, egressResult] = await Promise.all([
+          client.callTool({ name: 'receive_pii', arguments: {}, _meta: meta }),
+          client.callTool({
+            name: 'egress_post',
+            arguments: { destination: 'webhook', body: 'race' },
+            _meta: meta,
+          }),
+        ]);
+
+        handleClient.acceptResponseMeta((piiResult as { _meta?: Record<string, unknown> })._meta);
+        handleClient.acceptResponseMeta((egressResult as { _meta?: Record<string, unknown> })._meta);
+
+        const egressMeta = handleMetaFromResult(egressResult);
+        const egressOk = (egressResult as { isError?: boolean }).isError !== true;
+
+        // receive_pii always taints the journal; egress may win or lose the TOCTOU race.
+        expect(harness.journal.hasPrincipal('alice', 'pii')).toBe(true);
+
+        if (egressOk && egressMeta?.handle) {
+          // Allowed egress whose mint ran after taint can embed `pii` in the commitment.
+          // Allowed egress that minted before taint may still carry a clean head — either is fine;
+          // the point is the next request consults the journal, not these bytes.
+        } else if (!egressOk) {
+          expect(textFromResult(egressResult)).toMatch(/egress blocked.*pii/i);
+        }
+
+        // Subsequent egress must fail — journal wins over any LWW-retained snapshot.
+        const later = await callEgressPost(client, handleClient, 'webhook', 'post-race');
+        expect(later.result).toMatchObject({ isError: true });
+        expect(stateLabelsFromHandle(handleClient.getHandle()!)).toEqual(['pii']);
+      });
+    } finally {
+      await harness.close();
+    }
+  });
 });
