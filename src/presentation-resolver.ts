@@ -61,7 +61,14 @@ export function presentHandle(ctx: PluginContext, requestCtx: ServerContext): Pr
   }
 
   const requestMeta = readRequestMeta(requestCtx);
-  const maxHandleBytes = readClientMaxHandleBytes(requestCtx) ?? ctx.settings.maxHandleBytes;
+  const clientMaxHandleBytes = readClientMaxHandleBytes(requestCtx);
+  const serverMaxHandleBytes = ctx.settings.maxHandleBytes;
+  const maxHandleBytes =
+    clientMaxHandleBytes === undefined
+      ? serverMaxHandleBytes
+      : serverMaxHandleBytes === undefined
+        ? clientMaxHandleBytes
+        : Math.min(clientMaxHandleBytes, serverMaxHandleBytes);
   const principal = ctx.resolvePrincipal(requestCtx);
 
   if (!presentedHandle) {

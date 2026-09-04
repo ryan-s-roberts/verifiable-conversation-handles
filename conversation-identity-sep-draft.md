@@ -301,6 +301,12 @@ carry a handle.
 }
 ```
 
+> **SDK integration note.** The example above is the wire shape. An SDK may validate and lift
+> reserved protocol `_meta` keys into a typed request envelope before handler dispatch. For example,
+> `@modelcontextprotocol/server` v2 exposes the reserved capability fields through
+> `ctx.mcpReq.envelope`, while leaving this extension's non-reserved request payload in
+> `ctx.mcpReq._meta`. This does not define an alternative wire location.
+
 Servers supporting this extension MUST advertise it in the `server/discover` response:
 
 ```json
